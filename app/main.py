@@ -2,10 +2,12 @@ import asyncio
 from .db import init_db
 from .orchestrator import Orchestrator
 from .config import settings
+from .queue import RedisQueue
 
 async def main():
     await init_db()
-    orch = Orchestrator()
+    queue = RedisQueue(settings.REDIS_URL, settings.QUEUE_STREAM)
+    orch = Orchestrator(queue)
     await orch.start()
 
     print("Orchestrator started. Hourly scraping + 09:00/19:00 digests enabled.")
