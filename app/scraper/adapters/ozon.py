@@ -2,7 +2,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 import re
 from ...schemas import OfferRaw
-from . import get_selectors
+from . import get_selectors, select_one, select_all
 
 GEOID_TO_CITY = {
     "213": "Москва",
@@ -48,20 +48,16 @@ def _extract_price(text: str | None):
     return int(digits) if digits else None
 
 def parse_listing(html: str) -> list[OfferRaw]:
-    """
-    Упрощённый извлекатель из листинга Ozon.
-    Селекторы подвержены изменениям — предусмотрены fallback-ы.
-    """
+    """Парсит листинг Ozon."""
     soup = BeautifulSoup(html, "html.parser")
     items: list[OfferRaw] = []
 
-    # Ozon листинг часто живёт в data-widget="searchResultsV2"
-    selectors = get_selectors("ozon")
-    container_sel = selectors.get("container", '[data-widget="searchResultsV2"]')
-    card_sel = selectors.get("card", 'a[href*="/product/"]')
+    selectors = get_selectors("ozon").get("listing", {})
+    container_sel = selectors.get("container", {"css": '[data-widget="searchResultsV2"]'})
+    card_sel = selectors.get("card", {"css": 'a[href*="/product/"]'})
 
-    container = soup.select_one(container_sel) or soup
-    cards = container.select(card_sel)
+    container = select_one(soup, container_sel) or soup
+    cards = select_all(container, card_sel)
     seen = set()
     for a in cards:
         href = a.get("href")
@@ -78,11 +74,14 @@ def parse_listing(html: str) -> list[OfferRaw]:
             title = (a.find_next("span") or {}).get_text(strip=True) if hasattr(a.find_next("span"), "get_text") else ""
 
         # цена — пытаемся найти ближайший контейнер с цифрами
-        price_el = a.find_next(lambda tag: tag.name in ("span", "div") and re.search(r"\d[\d\s]*₽", tag.get_text()))
+        price_el = a.find_next(
+            lambda tag: tag.name in ("span", "div")
+            and re.search(r"\d[\d\s]*₽", tag.get_text())
+        )
         price = _extract_price(price_el.get_text() if price_el else "")
 
         img = None
-        img_el = a.find("img")
+        img_el = select_one(a, {"css": "img"})
         if img_el and img_el.get("src"):
             img = urljoin(BASE, img_el.get("src"))
 
@@ -121,6 +120,82 @@ def parse_listing(html: str) -> list[OfferRaw]:
             geoid=None
         ))
     return items
+
+
+def parse_product(html: str) -> OfferRaw:
+    """Парсит страницу товара Ozon."""
+    soup = BeautifulSoup(html, "html.parser")
+    selectors = get_selectors("ozon").get("product", {})
+
+    link = soup.find("link", rel="canonical")
+    url = urljoin(BASE, link.get("href")) if link and link.get("href") else BASE
+
+    title_el = select_one(soup, selectors.get("title", {"css": "h1"}))
+    title = (
+        title_el.get_text(" ", strip=True)
+        if title_el and hasattr(title_el, "get_text")
+        else "Товар Ozon"
+    )
+
+    price_el = select_one(soup, selectors.get("price", {"css": "[data-widget='webPrice']"}))
+    price_text = price_el.get_text() if price_el and hasattr(price_el, "get_text") else str(price_el)
+    price = _extract_price(price_text)
+
+    img_el = select_one(soup, selectors.get("image", {"css": "img"}))
+    img = urljoin(BASE, img_el.get("src")) if img_el and img_el.get("src") else None
+
+    text_block = soup.get_text(" ", strip=True).lower()
+    promo_flags: dict[str, int | bool] = {}
+    m_coupon = re.search(r"купон.*?(\d+)", text_block)
+    if m_coupon:
+        try:
+            promo_flags["instant_coupon"] = int(m_coupon.group(1))
+        except Exception:
+            pass
+
+    shipping_days = None
+    m_ship = re.search(r"(\d+)[^\d]{0,5}дн", text_block)
+    if m_ship:
+        try:
+            shipping_days = int(m_ship.group(1))
+        except Exception:
+            pass
+
+    price_in_cart = "корзин" in text_block
+    subscription = "подпис" in text_block
+
+    offer = OfferRaw(
+        source="ozon",
+        title=title[:200],
+        url=url,
+        img=img,
+        price=price,
+        shipping_days=shipping_days,
+        promo_flags=promo_flags,
+        price_in_cart=price_in_cart,
+        subscription=subscription,
+        geoid=None,
+    )
+    return offer
+
+
+FIXED_SHIPPING = 199
+
+
+def compute_final_price(offer: OfferRaw):
+    """Считает финальную цену оффера."""
+    if offer.price is None or offer.price_in_cart:
+        return None
+
+    coupon = 0
+    if offer.promo_flags and isinstance(offer.promo_flags.get("instant_coupon"), int):
+        coupon = int(offer.promo_flags["instant_coupon"])
+
+    total = offer.price - coupon
+    if offer.shipping_days is not None and not offer.subscription:
+        total += FIXED_SHIPPING
+
+    return total
 
 def external_id_from_url(url: str) -> str:
     # пример: https://www.ozon.ru/product/slug-123456789/ → берём последний числовой id
