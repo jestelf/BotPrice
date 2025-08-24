@@ -2,6 +2,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 import re
 from ...schemas import OfferRaw
+from ...pricing import compute_final_price as compute_final_price_common
 from . import get_selectors, select_one, select_all
 
 GEOID_TO_CITY = {
@@ -175,23 +176,15 @@ def parse_product(html: str, geoid: str | None = None) -> OfferRaw:
     return offer
 
 
-FIXED_SHIPPING = 199
-
-
 def compute_final_price(offer: OfferRaw):
-    """Считает финальную цену оффера."""
-    if offer.price is None or offer.price_in_cart:
-        return None
-
-    coupon = 0
-    if offer.promo_flags and isinstance(offer.promo_flags.get("instant_coupon"), int):
-        coupon = int(offer.promo_flags["instant_coupon"])
-
-    total = offer.price - coupon
-    if offer.shipping_days is not None and not offer.subscription:
-        total += FIXED_SHIPPING
-
-    return total
+    """Считает финальную цену оффера, используя общий модуль."""
+    return compute_final_price_common(
+        offer.price,
+        offer.promo_flags,
+        offer.shipping_days,
+        offer.subscription,
+        offer.price_in_cart,
+    )
 
 def external_id_from_url(url: str) -> str:
     # market product URLs look like /product--slug/ID?...

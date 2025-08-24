@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from app.processing.normalize import compute_final_price, FIXED_SHIPPING
+from app.pricing import compute_final_price, FIXED_SHIPPING
 
 
 def test_compute_final_price_with_coupon_and_shipping():
