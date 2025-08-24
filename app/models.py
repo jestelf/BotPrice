@@ -11,6 +11,7 @@ class Product(Base):
     title: Mapped[str] = mapped_column(Text)
     url: Mapped[str] = mapped_column(Text, unique=True)
     img: Mapped[str | None] = mapped_column(Text, nullable=True)
+    img_hash: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
     brand: Mapped[str | None] = mapped_column(String(64))
     category: Mapped[str | None] = mapped_column(String(64))
     finger: Mapped[str] = mapped_column(String(32), index=True)  # md5 fingerprint
@@ -20,6 +21,7 @@ class Product(Base):
     min_price_30d: Mapped[int | None] = mapped_column(Integer, nullable=True)
     avg_price_90d: Mapped[int | None] = mapped_column(Integer, nullable=True)
     min_price_90d: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    trend_30d: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     offers: Mapped[list["Offer"]] = relationship(back_populates="product", cascade="all, delete-orphan")
     history: Mapped[list["PriceHistory"]] = relationship(back_populates="product", cascade="all, delete-orphan")

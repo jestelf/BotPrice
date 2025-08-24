@@ -68,6 +68,7 @@ def normalize(raw: OfferRaw) -> OfferNormalized:
         title=title,
         url=str(raw.url),
         img=str(raw.img) if raw.img else None,
+        img_hash=hashlib.md5(str(raw.img).encode("utf-8")).hexdigest() if raw.img else None,
         brand=brand,
         category=None,
         seller=raw.seller,
