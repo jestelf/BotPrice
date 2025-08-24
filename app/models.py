@@ -2,6 +2,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import String, Integer, Float, ForeignKey, DateTime, JSON, UniqueConstraint, Index, Text, Boolean
 from datetime import datetime
 from .db import Base
+from .crypto import EncryptedStr, EncryptedInt, EncryptedJSON
 
 class Product(Base):
     __tablename__ = "products"
@@ -74,13 +75,13 @@ class Event(Base):
 class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    chat_id: Mapped[int] = mapped_column(Integer, unique=True, index=True)
-    geoid: Mapped[str] = mapped_column(String(16), default="213")
-    min_discount: Mapped[int] = mapped_column(Integer, default=25)
-    min_score: Mapped[int] = mapped_column(Integer, default=70)
-    filters_json: Mapped[dict | None] = mapped_column(JSON)
-    score_weights_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    schedule_cron: Mapped[str | None] = mapped_column(String(64))  # e.g., "0 9,19 * * *"
+    chat_id: Mapped[int] = mapped_column(EncryptedInt, unique=True, index=True)
+    geoid: Mapped[str] = mapped_column(EncryptedStr, default="213")
+    min_discount: Mapped[int] = mapped_column(EncryptedInt, default=25)
+    min_score: Mapped[int] = mapped_column(EncryptedInt, default=70)
+    filters_json: Mapped[dict | None] = mapped_column(EncryptedJSON, nullable=True)
+    score_weights_json: Mapped[dict | None] = mapped_column(EncryptedJSON, nullable=True)
+    schedule_cron: Mapped[str | None] = mapped_column(EncryptedStr)  # e.g., "0 9,19 * * *"
 
 class Favorite(Base):
     __tablename__ = "favorites"

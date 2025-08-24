@@ -4,9 +4,16 @@ from pathlib import Path
 import yaml
 import os
 
+from .secrets import load_secrets
+
+load_secrets()
+
 class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str
     TG_CHAT_ID: int | None = None
+
+    PROXY_URL: str | None = None
+    DATA_ENCRYPTION_KEY: str
 
     DB_URL: str = "sqlite+aiosqlite:///./deals.db"
 
