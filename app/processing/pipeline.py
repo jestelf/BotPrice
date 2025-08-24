@@ -29,7 +29,7 @@ async def fetch_site_list(
     geoid_actual = geoid or settings.DEFAULT_GEOID
     if site == "ozon":
         cookies = ozon_ad.region_cookies(geoid_actual)
-        html, _ = await render.fetch(
+        html, screenshot = await render.fetch(
             url=url,
             cookies=cookies,
             wait_selector='[data-widget="searchResultsV2"]',
@@ -37,10 +37,17 @@ async def fetch_site_list(
         )
         if not ozon_ad.ensure_region(html, geoid_actual):
             raise ValueError("Не удалось выбрать регион")
-        return ozon_ad.parse_listing(html)
+        try:
+            items = ozon_ad.parse_listing(html)
+        except Exception:
+            await render.save_snapshot(url, html, screenshot, prefix="schema")
+            raise
+        if not items:
+            await render.save_snapshot(url, html, screenshot, prefix="schema")
+        return items
     elif site == "market":
         cookies = market_ad.region_cookies(geoid_actual)
-        html, _ = await render.fetch(
+        html, screenshot = await render.fetch(
             url=url,
             cookies=cookies,
             wait_selector="article[data-autotest-id='product-snippet']",
@@ -48,7 +55,14 @@ async def fetch_site_list(
         )
         if not market_ad.ensure_region(html, geoid_actual):
             raise ValueError("Не удалось выбрать регион")
-        return market_ad.parse_listing(html, geoid=geoid)
+        try:
+            items = market_ad.parse_listing(html, geoid=geoid)
+        except Exception:
+            await render.save_snapshot(url, html, screenshot, prefix="schema")
+            raise
+        if not items:
+            await render.save_snapshot(url, html, screenshot, prefix="schema")
+        return items
     else:
         return []
 

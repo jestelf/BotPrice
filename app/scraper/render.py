@@ -1,7 +1,7 @@
 import asyncio
 import json
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -29,7 +29,16 @@ class RenderService:
         self._per_domain = per_domain
         self._redis = redis.from_url(settings.REDIS_URL)
         self._s3_bucket = getattr(settings, "S3_BUCKET", None)
-        self._s3 = boto3.client("s3") if self._s3_bucket else None
+        if self._s3_bucket:
+            self._s3 = boto3.client(
+                "s3",
+                endpoint_url=getattr(settings, "S3_ENDPOINT", None),
+                aws_access_key_id=getattr(settings, "S3_ACCESS_KEY", None),
+                aws_secret_access_key=getattr(settings, "S3_SECRET_KEY", None),
+            )
+        else:
+            self._s3 = None
+        self._snapshot_ttl = getattr(settings, "SNAPSHOT_TTL_DAYS", 7)
 
     async def start(self):
         if self._browser:
@@ -61,12 +70,13 @@ class RenderService:
         except Exception:
             pass
 
-    async def _upload_debug(self, url: str, html: str, screenshot: bytes) -> None:
+    async def save_snapshot(self, url: str, html: str, screenshot: bytes, prefix: str = "errors") -> None:
         if not self._s3:
             return
         parsed = urlparse(url)
         stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
-        base = f"errors/{parsed.netloc}/{stamp}-{uuid4()}"
+        base = f"{prefix}/{parsed.netloc}/{stamp}-{uuid4()}"
+        expires = datetime.utcnow() + timedelta(days=self._snapshot_ttl)
         try:
             await asyncio.gather(
                 asyncio.to_thread(
@@ -75,6 +85,7 @@ class RenderService:
                     Key=f"{base}.html",
                     Body=html.encode("utf-8"),
                     ContentType="text/html",
+                    Expires=expires,
                 ),
                 asyncio.to_thread(
                     self._s3.put_object,
@@ -82,6 +93,7 @@ class RenderService:
                     Key=f"{base}.png",
                     Body=screenshot,
                     ContentType="image/png",
+                    Expires=expires,
                 ),
             )
         except Exception:
@@ -155,7 +167,7 @@ class RenderService:
                         except Exception:
                             html = await page.content()
                             screenshot = await page.screenshot(full_page=True)
-                            await self._upload_debug(url, html, screenshot)
+                            await self.save_snapshot(url, html, screenshot)
                             raise
                     await page.wait_for_timeout(sleep_ms + random.randint(0, sleep_jitter_ms))
                     status = resp.status if resp else 200
@@ -186,7 +198,7 @@ class RenderService:
                         screenshot = await page.screenshot(full_page=True)
                     except Exception:
                         screenshot = b""
-                    await self._upload_debug(url, html, screenshot)
+                    await self.save_snapshot(url, html, screenshot)
                     raise
                 finally:
                     await page.close()
