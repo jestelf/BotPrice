@@ -1,5 +1,6 @@
 import random
 from typing import Iterable
+from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..scraper.render import RenderService
@@ -90,26 +91,34 @@ async def upsert_offer(session: AsyncSession, item: OfferNormalized):
     session.add(hist)
     return prod, off, hist
 
-async def compute_features(session: AsyncSession, product_id: int) -> tuple[int | None, int | None]:
+async def compute_features(session: AsyncSession, product_id: int) -> tuple[dict, dict]:
     """
-    Возвращает (avg_30d, best_90d) на основе всей истории (упрощённо).
-    Для прототипа посчитаем по всем точкам: среднее и минимум.
+    Возвращает словари со статистикой за 30 и 90 дней: {"avg": int|None, "min": int|None}.
     """
     from sqlalchemy import func
-    q = select(func.avg(PriceHistory.price_final), func.min(PriceHistory.price_final)).where(
-        PriceHistory.product_id == product_id
-    )
-    res = await session.execute(q)
-    avg_price, min_price = res.first() or (None, None)
-    try:
-        avg_price = int(avg_price) if avg_price is not None else None
-    except Exception:
-        pass
-    try:
-        min_price = int(min_price) if min_price is not None else None
-    except Exception:
-        pass
-    return avg_price, min_price
+
+    now = datetime.utcnow()
+    stats = {}
+    for days in (30, 90):
+        q = select(
+            func.avg(PriceHistory.price_final),
+            func.min(PriceHistory.price_final),
+        ).where(
+            PriceHistory.product_id == product_id,
+            PriceHistory.ts >= now - timedelta(days=days)
+        )
+        res = await session.execute(q)
+        avg_price, min_price = res.first() or (None, None)
+        try:
+            avg_price = int(avg_price) if avg_price is not None else None
+        except Exception:
+            avg_price = None
+        try:
+            min_price = int(min_price) if min_price is not None else None
+        except Exception:
+            min_price = None
+        stats[days] = {"avg": avg_price, "min": min_price}
+    return stats[30], stats[90]
 
 async def process_preset(session: AsyncSession, render: RenderService, site: str, url: str, geoid: str | None, min_discount: int, min_score: int) -> list[dict]:
     raws = await fetch_site_list(render, site, url, geoid)
@@ -117,21 +126,30 @@ async def process_preset(session: AsyncSession, render: RenderService, site: str
     normalized = dedupe_by_finger(normalized)
 
     results: list[dict] = []
-    # Upsert & score
+    infos = []
     for n in normalized:
-        await upsert_offer(session, n)
+        infos.append(await upsert_offer(session, n))
     await session.commit()
 
-    # повторное чтение для вычисления фич
-    for n in normalized:
-        q = select(Product).where(Product.url == n.url)
-        res = await session.execute(q)
-        prod = res.scalar_one_or_none()
-        if not prod:
-            continue
-        avg30, best90 = await compute_features(session, prod.id)
-        disc = discount_pct(avg30 or n.price_old, n.price_final)
-        score = compute_score(disc, (avg30 - (n.price_final or 0)) if avg30 and n.price_final else None, None, n.shipping_days)
+    for (prod, off, _), n in zip(infos, normalized):
+        stats30, stats90 = await compute_features(session, prod.id)
+        prod.avg_price_30d = stats30["avg"]
+        prod.min_price_30d = stats30["min"]
+        prod.avg_price_90d = stats90["avg"]
+        prod.min_price_90d = stats90["min"]
+
+        abs_sav = (stats30["avg"] - (n.price_final or 0)) if stats30["avg"] and n.price_final else None
+        disc = discount_pct(n.price_old or stats30["avg"], n.price_final)
+        fake_msrp = False
+        if n.price_old and stats30["avg"]:
+            fake_msrp = n.price_old > stats30["avg"] * 1.5
+        score = compute_score(disc, abs_sav, None, n.shipping_days)
+
+        off.discount_pct = disc
+        off.abs_saving = abs_sav
+        off.score = score
+        off.fake_msrp = fake_msrp
+
         if disc is not None:
             n.discount_pct = disc
         if (disc is not None and disc >= min_discount) or score >= min_score:
@@ -142,8 +160,10 @@ async def process_preset(session: AsyncSession, render: RenderService, site: str
                 "discount_pct": disc,
                 "score": score,
                 "source": n.source,
-                "img": n.img
+                "img": n.img,
+                "fake_msrp": fake_msrp,
             })
-    # сортируем по score
+
+    await session.commit()
     results.sort(key=lambda x: x["score"], reverse=True)
     return results
