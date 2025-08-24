@@ -4,7 +4,11 @@ from .orchestrator import Orchestrator
 from .config import settings
 from .queue import RedisQueue
 
+import sentry_sdk
+
 async def main():
+    if settings.SENTRY_DSN:
+        sentry_sdk.init(settings.SENTRY_DSN)
     await init_db()
     queue = RedisQueue(settings.REDIS_URL, settings.QUEUE_STREAM)
     orch = Orchestrator(queue)

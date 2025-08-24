@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     S3_SECRET_KEY: str | None = None
     SNAPSHOT_TTL_DAYS: int = 7
 
+    METRICS_PORT: int = 8000
+    SENTRY_DSN: str | None = None
+
     model_config = SettingsConfigModel = SettingsConfigDict(env_file='.env', extra='ignore')
 
 class PresetItem(BaseModel):

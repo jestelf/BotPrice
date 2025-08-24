@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: botprice-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: botprice-worker
+  template:
+    metadata:
+      labels:
+        app: botprice-worker
+    spec:
+      containers:
+      - name: worker
+        image: botprice:latest
+        command: ["python", "-m", "app.worker"]
+        env:
+        - name: METRICS_PORT
+          value: "8000"
+        - name: SENTRY_DSN
+          value: ""
+        ports:
+        - containerPort: 8000
+          name: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: botprice-worker-metrics
+spec:
+  selector:
+    app: botprice-worker
+  ports:
+  - name: metrics
+    port: 8000
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
