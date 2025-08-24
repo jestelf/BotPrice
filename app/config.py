@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     QUEUE_STREAM: str = "presets"
 
     S3_BUCKET: str | None = None
+    S3_ENDPOINT: str | None = None
+    S3_ACCESS_KEY: str | None = None
+    S3_SECRET_KEY: str | None = None
+    SNAPSHOT_TTL_DAYS: int = 7
 
     model_config = SettingsConfigModel = SettingsConfigDict(env_file='.env', extra='ignore')
 
