@@ -25,6 +25,14 @@ listing_empty_share = Gauge(
     "listing_empty_share", "Share of empty listings", ["domain"]
 )
 
+# Бюджет и пропуски задач
+budget_exceeded = Counter(
+    "budget_exceeded_total", "Total budget exceed events", ["type"]
+)
+tasks_skipped = Counter(
+    "tasks_skipped_total", "Total skipped tasks", ["reason"]
+)
+
 # Метрики по категориям
 category_avg_price = Gauge(
     "category_avg_price", "Average price per category", ["category"]

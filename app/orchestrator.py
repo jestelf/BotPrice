@@ -10,6 +10,7 @@ from .config import settings, presets
 from .queue import AbstractQueue
 from .db import SessionLocal
 from .models import User
+from . import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -68,12 +69,21 @@ class Orchestrator:
     def _allow_publish(self, task: dict) -> bool:
         if self._in_quiet_hours():
             logger.info("Тихие часы, задача пропущена: %s", task)
+            metrics.tasks_skipped.labels(reason="quiet_hours").inc()
             return False
         if self.max_pages is not None and self.pages_sent >= self.max_pages:
-            logger.warning("Превышен лимит страниц %s, задача пропущена: %s", self.max_pages, task)
+            logger.warning(
+                "Превышен лимит страниц %s, задача пропущена: %s", self.max_pages, task
+            )
+            metrics.budget_exceeded.labels(type="pages").inc()
+            metrics.tasks_skipped.labels(reason="max_pages").inc()
             return False
         if self.max_tasks is not None and self.tasks_sent >= self.max_tasks:
-            logger.warning("Превышен лимит задач %s, задача пропущена: %s", self.max_tasks, task)
+            logger.warning(
+                "Превышен лимит задач %s, задача пропущена: %s", self.max_tasks, task
+            )
+            metrics.budget_exceeded.labels(type="tasks").inc()
+            metrics.tasks_skipped.labels(reason="max_tasks").inc()
             return False
         self.pages_sent += 1
         self.tasks_sent += 1
@@ -85,35 +95,56 @@ class Orchestrator:
 
         now = datetime.utcnow()
         async with SessionLocal() as session:
-            res = await session.execute(select(User.geoid, User.schedule_cron))
+            res = await session.execute(
+                select(User.geoid, User.filters_json, User.schedule_cron)
+            )
             rows = res.all()
 
-        geoids: set[str] = set()
-        for geoid, cron in rows:
+        pairs: set[tuple[str, str]] = set()
+        all_categories = [
+            item["name"].split(":")[0] for items in presets.sites.values() for item in items
+        ]
+
+        for geoid, filters_json, cron in rows:
             if cron:
                 try:
                     trig = CronTrigger.from_crontab(cron)
                     if not trig.match(now):
-                        logger.info("Пропуск геоида %s из-за расписания %s", geoid, cron)
+                        logger.info(
+                            "Пропуск геоида %s из-за расписания %s", geoid, cron
+                        )
                         continue
                 except Exception as e:
-                    logger.warning("Некорректный cron %s для геоида %s: %s", cron, geoid, e)
+                    logger.warning(
+                        "Некорректный cron %s для геоида %s: %s", cron, geoid, e
+                    )
                     continue
-            geoids.add(geoid)
+            categories = []
+            if filters_json and isinstance(filters_json, dict):
+                categories = filters_json.get("categories") or []
+            if not categories:
+                categories = all_categories
+            for cat in categories:
+                pairs.add((cat, geoid))
 
         default_geoid = presets.geoid_default or settings.DEFAULT_GEOID
-        geoids.add(default_geoid)
+        for cat in all_categories:
+            pairs.add((cat, default_geoid))
 
         min_discount = settings.MIN_DISCOUNT
         min_score = settings.MIN_SCORE
 
-        for geoid in geoids:
+        for category, geoid in pairs:
             for site, items in presets.sites.items():
                 for item in items:
+                    item_cat = item["name"].split(":")[0]
+                    if item_cat != category:
+                        continue
                     task = {
                         "site": site,
                         "url": item["url"],
                         "geoid": geoid,
+                        "category": category,
                         "min_discount": min_discount,
                         "min_score": min_score,
                         "notify": notify,
