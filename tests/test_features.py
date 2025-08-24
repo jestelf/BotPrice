@@ -44,6 +44,7 @@ def load_pipeline(monkeypatch):
         "app.metrics",
         types.SimpleNamespace(
             update_listing_stats=lambda *a, **k: None,
+            update_category_price_stats=lambda *a, **k: None,
             render_errors=types.SimpleNamespace(labels=lambda **kw: types.SimpleNamespace(inc=lambda: None)),
         ),
     )

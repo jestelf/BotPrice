@@ -11,6 +11,9 @@ load_secrets()
 class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str
     TG_CHAT_ID: int | None = None
+    MONITORING_SLACK_WEBHOOK: str | None = None
+    MONITORING_TELEGRAM_TOKEN: str | None = None
+    MONITORING_TELEGRAM_CHAT_ID: int | None = None
 
     PROXY_URL: str | None = None
     DATA_ENCRYPTION_KEY: str

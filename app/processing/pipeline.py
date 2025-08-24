@@ -15,7 +15,11 @@ from ..processing.detectors import is_fake_msrp
 from ..processing.dedupe import dedupe_offers
 from ..models import Product, Offer, PriceHistory
 from ..config import settings
-from ..metrics import update_listing_stats, render_errors
+from ..metrics import (
+    update_listing_stats,
+    update_category_price_stats,
+    render_errors,
+)
 
 async def fetch_site_list(
     render: RenderService, site: str, url: str, geoid: str | None
@@ -172,6 +176,7 @@ async def process_preset(
     raws = await fetch_site_list(render, site, url, geoid)
     normalized = [normalize(r) for r in raws]
     normalized = dedupe_offers(normalized)
+    update_category_price_stats(normalized)
 
     results: list[dict] = []
     infos = []

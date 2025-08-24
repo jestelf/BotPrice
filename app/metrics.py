@@ -1,6 +1,10 @@
 from collections import defaultdict
+from typing import Iterable
 
 from prometheus_client import Counter, Gauge, Histogram
+
+from .notifier.monitoring import notify_monitoring
+from .schemas import OfferNormalized
 
 
 render_latency = Histogram(
@@ -15,6 +19,15 @@ listing_empty_share = Gauge(
     "listing_empty_share", "Share of empty listings", ["domain"]
 )
 
+# Метрики по категориям
+category_avg_price = Gauge(
+    "category_avg_price", "Average price per category", ["category"]
+)
+category_no_price_share = Gauge(
+    "category_no_price_share", "Share of items without price", ["category"]
+)
+_category_counts = defaultdict(int)
+
 
 def update_listing_stats(domain: str, empty: bool) -> None:
     """Обновляет счётчики и долю пустых листингов."""
@@ -23,3 +36,36 @@ def update_listing_stats(domain: str, empty: bool) -> None:
         _listing_empty[domain] += 1
     share = _listing_empty[domain] / _listing_total[domain]
     listing_empty_share.labels(domain=domain).set(share)
+
+
+def update_category_price_stats(items: Iterable[OfferNormalized]) -> None:
+    """Обновляет среднюю цену и долю карточек без цены по категориям.
+
+    Одновременно отслеживает резкие изменения количества карточек и
+    отправляет уведомление в канал мониторинга.
+    """
+    stats: dict[str, dict[str, float]] = defaultdict(
+        lambda: {"total": 0, "sum": 0.0, "with_price": 0}
+    )
+    for it in items:
+        cat = it.category or "unknown"
+        s = stats[cat]
+        s["total"] += 1
+        if it.price is not None:
+            s["sum"] += it.price
+            s["with_price"] += 1
+
+    for cat, s in stats.items():
+        total = s["total"]
+        with_price = s["with_price"]
+        avg = s["sum"] / with_price if with_price else 0
+        category_avg_price.labels(category=cat).set(avg)
+        no_price_share = (total - with_price) / total if total else 0
+        category_no_price_share.labels(category=cat).set(no_price_share)
+
+        prev = _category_counts[cat]
+        if prev and (total < prev * 0.5 or total > prev * 2):
+            notify_monitoring(
+                f"Аномальное изменение количества карточек в категории {cat}: {prev} → {total}"
+            )
+        _category_counts[cat] = total
