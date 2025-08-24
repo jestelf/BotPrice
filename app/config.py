@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     METRICS_PORT: int = 8000
     SENTRY_DSN: str | None = None
 
-    model_config = SettingsConfigModel = SettingsConfigDict(env_file='.env', extra='ignore')
+    model_config = SettingsConfigDict(env_file='.env', extra='ignore')
 
 class PresetItem(BaseModel):
     name: str
