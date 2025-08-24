@@ -8,6 +8,7 @@ from uuid import uuid4
 import time
 
 import sentry_sdk
+import logging
 
 import boto3
 import redis.asyncio as redis
@@ -15,6 +16,8 @@ from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
 from ..config import settings
 from ..metrics import render_latency, render_errors
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -74,8 +77,10 @@ class RenderService:
             await ctx.clear_cookies()
             await ctx.set_extra_http_headers({})
             await ctx.set_storage_state({"origins": []})
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception("Не удалось сбросить контекст")
+            sentry_sdk.capture_exception(e)
+            raise
 
     async def save_snapshot(self, url: str, html: str, screenshot: bytes, prefix: str = "errors") -> None:
         if not self._s3:
@@ -103,8 +108,10 @@ class RenderService:
                     Expires=expires,
                 ),
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception("Не удалось сохранить снапшот %s", url)
+            sentry_sdk.capture_exception(e)
+            raise
 
     async def fetch(
         self,
@@ -195,8 +202,9 @@ class RenderService:
                                     "last_modified": resp.headers.get("last-modified") if resp else None,
                                 }
                                 await self._redis.set(meta_key, json.dumps(meta), ex=86400)
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.exception("Не удалось записать метаданные для %s", url)
+                                sentry_sdk.capture_exception(e)
                         return html, screenshot
                     except Exception:
                         try:
