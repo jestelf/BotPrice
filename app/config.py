@@ -18,6 +18,9 @@ class Settings(BaseSettings):
 
     PRESETS_FILE: str = "./presets.yaml"
 
+    REDIS_URL: str = "redis://localhost:6379/0"
+    QUEUE_STREAM: str = "presets"
+
     model_config = SettingsConfigModel = SettingsConfigDict(env_file='.env', extra='ignore')
 
 class PresetItem(BaseModel):
