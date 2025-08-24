@@ -16,6 +16,11 @@ class Product(Base):
     finger: Mapped[str] = mapped_column(String(32), index=True)  # md5 fingerprint
     geoid_created: Mapped[str | None] = mapped_column(String(16))
 
+    avg_price_30d: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    min_price_30d: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    avg_price_90d: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    min_price_90d: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     offers: Mapped[list["Offer"]] = relationship(back_populates="product", cascade="all, delete-orphan")
     history: Mapped[list["PriceHistory"]] = relationship(back_populates="product", cascade="all, delete-orphan")
 
@@ -36,6 +41,10 @@ class Offer(Base):
     price_in_cart: Mapped[bool | None] = mapped_column(Boolean)
     subscription: Mapped[bool | None] = mapped_column(Boolean)
     scraped_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    discount_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    abs_saving: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fake_msrp: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     product: Mapped["Product"] = relationship(back_populates="offers")
     __table_args__ = (

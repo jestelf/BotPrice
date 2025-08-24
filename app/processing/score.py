@@ -8,7 +8,7 @@ def discount_pct(base: Optional[int], price_final: Optional[int]) -> Optional[fl
 def compute_score(disc_pct: Optional[float], abs_saving: Optional[int], seller_rating: Optional[float] = None, shipping_days: Optional[int] = None) -> float:
     dp = disc_pct or 0.0
     abs_s = (abs_saving or 0) / 100.0
-    sr = (seller_rating or 0)  # 0..5 → можно масштабировать, но оставим как есть
+    sr = (seller_rating or 0) * 20  # 0..5 → 0..100
     sd = -(shipping_days or 0)
-    # веса (игрушечные, можно тюнинговать)
-    return round(0.5*dp + 0.25*abs_s + 0.15*sr + 0.1*sd + 10, 2)
+    # новая формула: веса 0.4/0.3/0.2/0.1 и базовый сдвиг 10
+    return round(0.4*dp + 0.3*abs_s + 0.2*sr + 0.1*sd + 10, 2)
