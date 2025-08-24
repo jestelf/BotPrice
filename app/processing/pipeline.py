@@ -159,7 +159,16 @@ async def compute_features(session: AsyncSession, product_id: int) -> tuple[dict
 
     return stats[30], stats[90], trend
 
-async def process_preset(session: AsyncSession, render: RenderService, site: str, url: str, geoid: str | None, min_discount: int, min_score: int) -> list[dict]:
+async def process_preset(
+    session: AsyncSession,
+    render: RenderService,
+    site: str,
+    url: str,
+    geoid: str | None,
+    min_discount: int,
+    min_score: int,
+    score_weights: dict | None = None,
+) -> list[dict]:
     raws = await fetch_site_list(render, site, url, geoid)
     normalized = [normalize(r) for r in raws]
     normalized = dedupe_offers(normalized)
@@ -181,7 +190,7 @@ async def process_preset(session: AsyncSession, render: RenderService, site: str
         abs_sav = (stats30["avg"] - (n.price_final or 0)) if stats30["avg"] and n.price_final else None
         disc = discount_pct(n.price_old or stats30["avg"], n.price_final)
         fake_msrp = is_fake_msrp(n.price_old, stats30["avg"], stats90["min"])
-        score = compute_score(disc, abs_sav, None, n.shipping_days)
+        score = compute_score(disc, abs_sav, None, n.shipping_days, score_weights)
 
         off.discount_pct = disc
         off.abs_saving = abs_sav
