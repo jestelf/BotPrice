@@ -1,4 +1,5 @@
 import asyncio
+import random
 from typing import Callable, Awaitable, Any
 import redis.asyncio as redis
 
@@ -43,11 +44,15 @@ class RedisQueue(AbstractQueue):
                         await handler(data)
                     except PermanentError:
                         await self.publish({**data, "retries": retries}, dlq=True)
-                    except Exception:
-                        if retries + 1 >= max_retries:
+                    except Exception as e:
+                        status = getattr(e, "status", getattr(e, "status_code", None))
+                        if status and 400 <= int(status) < 600:
+                            await self.publish({**data, "retries": retries}, dlq=True)
+                        elif retries + 1 >= max_retries:
                             await self.publish({**data, "retries": retries + 1}, dlq=True)
                         else:
-                            await asyncio.sleep(2 ** retries)
+                            backoff = (2 ** retries) + random.random()
+                            await asyncio.sleep(backoff)
                             await self.publish({**data, "retries": retries + 1})
                     finally:
                         await self.redis.xdel(self.stream, msg_id)
