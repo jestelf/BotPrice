@@ -44,6 +44,7 @@ class Settings(BaseSettings):
 
     METRICS_PORT: int = 8000
     SENTRY_DSN: str | None = None
+    DLQ_OVERFLOW_THRESHOLD: int = 100
 
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
 
