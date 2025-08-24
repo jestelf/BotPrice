@@ -1,9 +1,60 @@
 ozon:
-  container: '[data-widget="searchResultsV2"]'
-  card: 'a[href*="/product/"]'
+  version: 1
+  listing:
+    container:
+      css: '[data-widget="searchResultsV2"]'
+      xpath: "//div[@data-widget='searchResultsV2']"
+      json: null
+    card:
+      css: 'a[href*="/product/"]'
+      xpath: "//a[contains(@href,'/product/')]"
+      json: null
+  product:
+    title:
+      css: 'h1'
+      xpath: '//h1'
+      json: null
+    price:
+      css: '[data-widget="webPrice"] span'
+      xpath: "//*[@data-widget='webPrice']//span"
+      json: 'price.current'
+    image:
+      css: 'img'
+      xpath: '//img'
+      json: 'image.url'
 market:
-  card: "article[data-autotest-id='product-snippet']"
-  link: "a[href*='/product--']"
-  title: "[data-baobab-name='title']"
-  price: "[data-autotest-value]"
-  image: 'img'
+  version: 1
+  listing:
+    card:
+      css: "article[data-autotest-id='product-snippet']"
+      xpath: "//article[@data-autotest-id='product-snippet']"
+      json: null
+    link:
+      css: "a[href*='/product--']"
+      xpath: "//a[contains(@href,'/product--')]"
+      json: null
+    title:
+      css: "[data-baobab-name='title']"
+      xpath: "//*[@data-baobab-name='title']"
+      json: null
+    price:
+      css: "[data-autotest-value]"
+      xpath: "//*[@data-autotest-value]"
+      json: 'price.value'
+    image:
+      css: 'img'
+      xpath: '//img'
+      json: 'image.url'
+  product:
+    title:
+      css: 'h1'
+      xpath: '//h1'
+      json: null
+    price:
+      css: "[data-auto='mainPrice']"
+      xpath: "//*[@data-auto='mainPrice']"
+      json: 'price.current'
+    image:
+      css: 'img'
+      xpath: '//img'
+      json: 'image.url'
