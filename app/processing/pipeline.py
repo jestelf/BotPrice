@@ -11,22 +11,11 @@ from ..scraper.adapters import ozon as ozon_ad, market as market_ad
 from ..schemas import OfferRaw, OfferNormalized
 from ..processing.normalize import normalize
 from ..processing.score import discount_pct, compute_score
+from ..processing.detectors import is_fake_msrp
+from ..processing.dedupe import dedupe_offers
 from ..models import Product, Offer, PriceHistory
 from ..config import settings
 from ..metrics import update_listing_stats, render_errors
-
-def dedupe_by_finger(items: Iterable[OfferNormalized]) -> list[OfferNormalized]:
-    best: dict[str, OfferNormalized] = {}
-    for it in items:
-        key = it.finger
-        if key not in best:
-            best[key] = it
-        else:
-            prev = best[key]
-            # выбираем с меньшей ценой
-            if (it.price_final or 10**12) < (prev.price_final or 10**12):
-                best[key] = it
-    return list(best.values())
 
 async def fetch_site_list(
     render: RenderService, site: str, url: str, geoid: str | None
@@ -90,6 +79,7 @@ async def upsert_offer(session: AsyncSession, item: OfferNormalized):
             title=item.title,
             url=item.url,
             img=item.img,
+            img_hash=item.img_hash,
             brand=item.brand,
             category=item.category,
             finger=item.finger,
@@ -97,6 +87,9 @@ async def upsert_offer(session: AsyncSession, item: OfferNormalized):
         )
         session.add(prod)
         await session.flush()
+    else:
+        if item.img_hash and not prod.img_hash:
+            prod.img_hash = item.img_hash
 
     # Offer
     off = Offer(
@@ -122,9 +115,9 @@ async def upsert_offer(session: AsyncSession, item: OfferNormalized):
     session.add(hist)
     return prod, off, hist
 
-async def compute_features(session: AsyncSession, product_id: int) -> tuple[dict, dict]:
+async def compute_features(session: AsyncSession, product_id: int) -> tuple[dict, dict, float | None]:
     """
-    Возвращает словари со статистикой за 30 и 90 дней: {"avg": int|None, "min": int|None}.
+    Возвращает словари со статистикой за 30 и 90 дней и тренд за 30 дней.
     """
     from sqlalchemy import func
 
@@ -149,12 +142,27 @@ async def compute_features(session: AsyncSession, product_id: int) -> tuple[dict
         except Exception:
             min_price = None
         stats[days] = {"avg": avg_price, "min": min_price}
-    return stats[30], stats[90]
+
+    # тренд: изменение цены за 30 дней в процентах
+    q = select(PriceHistory.price_final, PriceHistory.ts).where(
+        PriceHistory.product_id == product_id,
+        PriceHistory.ts >= now - timedelta(days=30)
+    ).order_by(PriceHistory.ts)
+    res = await session.execute(q)
+    rows = res.all()
+    trend = None
+    if len(rows) >= 2:
+        first = rows[0][0]
+        last = rows[-1][0]
+        if first and last is not None and first > 0:
+            trend = round((last - first) / first * 100, 2)
+
+    return stats[30], stats[90], trend
 
 async def process_preset(session: AsyncSession, render: RenderService, site: str, url: str, geoid: str | None, min_discount: int, min_score: int) -> list[dict]:
     raws = await fetch_site_list(render, site, url, geoid)
     normalized = [normalize(r) for r in raws]
-    normalized = dedupe_by_finger(normalized)
+    normalized = dedupe_offers(normalized)
 
     results: list[dict] = []
     infos = []
@@ -163,17 +171,16 @@ async def process_preset(session: AsyncSession, render: RenderService, site: str
     await session.commit()
 
     for (prod, off, _), n in zip(infos, normalized):
-        stats30, stats90 = await compute_features(session, prod.id)
+        stats30, stats90, trend = await compute_features(session, prod.id)
         prod.avg_price_30d = stats30["avg"]
         prod.min_price_30d = stats30["min"]
         prod.avg_price_90d = stats90["avg"]
         prod.min_price_90d = stats90["min"]
+        prod.trend_30d = trend
 
         abs_sav = (stats30["avg"] - (n.price_final or 0)) if stats30["avg"] and n.price_final else None
         disc = discount_pct(n.price_old or stats30["avg"], n.price_final)
-        fake_msrp = False
-        if n.price_old and stats30["avg"]:
-            fake_msrp = n.price_old > stats30["avg"] * 1.5
+        fake_msrp = is_fake_msrp(n.price_old, stats30["avg"], stats90["min"])
         score = compute_score(disc, abs_sav, None, n.shipping_days)
 
         off.discount_pct = disc

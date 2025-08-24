@@ -23,6 +23,7 @@ class OfferNormalized(BaseModel):
     title: str
     url: str
     img: Optional[str] = None
+    img_hash: Optional[str] = None
     brand: Optional[str] = None
     category: Optional[str] = None
     seller: Optional[str] = None
