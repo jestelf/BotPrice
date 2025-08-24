@@ -4,7 +4,42 @@ import re
 from ...schemas import OfferRaw
 from . import get_selectors
 
+GEOID_TO_CITY = {
+    "213": "Москва",
+    "2": "Санкт-Петербург",
+}
+
 BASE = "https://www.ozon.ru"
+
+
+def region_cookies(geoid: str) -> list[dict[str, str]]:
+    """Возвращает куки для выбора региона."""
+    return [
+        {
+            "name": "region",
+            "value": geoid,
+            "domain": ".ozon.ru",
+            "path": "/",
+        }
+    ]
+
+
+def city_from_html(html: str) -> str | None:
+    """Извлекает название города из HTML шапки сайта."""
+    soup = BeautifulSoup(html, "html.parser")
+    el = soup.select_one("[data-widget='headerLocation']") or soup.select_one(
+        "[data-widget='regionSelect']"
+    )
+    return el.get_text(strip=True) if el else None
+
+
+def ensure_region(html: str, geoid: str) -> bool:
+    """Проверяет, что отображаемый город соответствует geoid."""
+    expected = GEOID_TO_CITY.get(geoid)
+    if not expected:
+        return True
+    city = city_from_html(html)
+    return city == expected
 
 def _extract_price(text: str | None):
     if not text:

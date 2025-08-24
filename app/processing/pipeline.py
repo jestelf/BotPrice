@@ -24,18 +24,25 @@ def dedupe_by_finger(items: Iterable[OfferNormalized]) -> list[OfferNormalized]:
                 best[key] = it
     return list(best.values())
 
-async def fetch_site_list(render: RenderService, site: str, url: str, geoid: str | None) -> list[OfferRaw]:
+async def fetch_site_list(
+    render: RenderService, site: str, url: str, geoid: str | None
+) -> list[OfferRaw]:
     ttl = random.randint(30, 180)
+    geoid_actual = geoid or settings.DEFAULT_GEOID
     if site == "ozon":
+        cookies = ozon_ad.region_cookies(geoid_actual)
         html, _ = await render.fetch(
             url=url,
+            cookies=cookies,
             wait_selector='[data-widget="searchResultsV2"]',
             region_hint=geoid,
             cache_ttl=ttl,
         )
+        if not ozon_ad.ensure_region(html, geoid_actual):
+            raise ValueError("Не удалось выбрать регион")
         return ozon_ad.parse_listing(html)
     elif site == "market":
-        cookies = [{"name": "yandex_gid", "value": geoid or settings.DEFAULT_GEOID, "domain": ".yandex.ru", "path": "/"}]
+        cookies = market_ad.region_cookies(geoid_actual)
         html, _ = await render.fetch(
             url=url,
             cookies=cookies,
@@ -43,6 +50,8 @@ async def fetch_site_list(render: RenderService, site: str, url: str, geoid: str
             region_hint=geoid,
             cache_ttl=ttl,
         )
+        if not market_ad.ensure_region(html, geoid_actual):
+            raise ValueError("Не удалось выбрать регион")
         return market_ad.parse_listing(html, geoid=geoid)
     else:
         return []
