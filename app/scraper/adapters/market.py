@@ -2,6 +2,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 import re
 from ...schemas import OfferRaw
+from . import get_selectors
 
 BASE = "https://market.yandex.ru"
 
@@ -13,26 +14,33 @@ def parse_listing(html: str, geoid: str | None = None) -> list[OfferRaw]:
     items: list[OfferRaw] = []
 
     # карточки обычно в article[data-autotest-id='product-snippet']
-    cards = soup.select("article[data-autotest-id='product-snippet']")
+    selectors = get_selectors("market")
+    card_sel = selectors.get("card", "article[data-autotest-id='product-snippet']")
+    link_sel = selectors.get("link", "a[href*='/product--']")
+    title_sel = selectors.get("title", "[data-baobab-name='title']")
+    price_sel = selectors.get("price", "[data-autotest-value]")
+    image_sel = selectors.get("image", "img")
+
+    cards = soup.select(card_sel)
     for card in cards:
-        link = card.select_one("a[href*='/product--']")
+        link = card.select_one(link_sel)
         if not link:
             continue
         href = link.get("href")
         url = urljoin(BASE, href)
 
-        title_el = card.select_one("[data-baobab-name='title']") or link
+        title_el = card.select_one(title_sel) or link
         title = title_el.get_text(" ", strip=True) if title_el else "Товар Маркета"
 
         price_value = None
-        price_el = card.select_one("[data-autotest-value]")
+        price_el = card.select_one(price_sel)
         if price_el and price_el.has_attr("data-autotest-value"):
             try:
                 price_value = int(price_el["data-autotest-value"])
             except Exception:
                 pass
 
-        img_el = card.select_one("img")
+        img_el = card.select_one(image_sel)
         img = urljoin(BASE, img_el.get("src")) if img_el and img_el.get("src") else None
 
         text_block = card.get_text(" ", strip=True).lower()

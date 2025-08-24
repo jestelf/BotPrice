@@ -2,6 +2,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 import re
 from ...schemas import OfferRaw
+from . import get_selectors
 
 BASE = "https://www.ozon.ru"
 
@@ -20,8 +21,12 @@ def parse_listing(html: str) -> list[OfferRaw]:
     items: list[OfferRaw] = []
 
     # Ozon листинг часто живёт в data-widget="searchResultsV2"
-    container = soup.select_one('[data-widget="searchResultsV2"]') or soup
-    cards = container.select('a[href*="/product/"]')
+    selectors = get_selectors("ozon")
+    container_sel = selectors.get("container", '[data-widget="searchResultsV2"]')
+    card_sel = selectors.get("card", 'a[href*="/product/"]')
+
+    container = soup.select_one(container_sel) or soup
+    cards = container.select(card_sel)
     seen = set()
     for a in cards:
         href = a.get("href")
