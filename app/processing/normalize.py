@@ -1,9 +1,10 @@
 import hashlib
 import re
-from typing import Optional, Dict
+from typing import Optional
 from ..schemas import OfferRaw, OfferNormalized
 from ..scraper.adapters.ozon import external_id_from_url as ozon_id
 from ..scraper.adapters.market import external_id_from_url as market_id
+from ..pricing import compute_final_price
 
 def norm_title(t: str) -> str:
     return re.sub(r"\s+", " ", t).strip()
@@ -21,30 +22,6 @@ def guess_brand(title: str) -> Optional[str]:
             return k.capitalize()
     return None
 
-FIXED_SHIPPING = 199
-
-
-def compute_final_price(
-    price: Optional[int],
-    promo_flags: Dict[str, int | bool] | None = None,
-    shipping_days: Optional[int] = None,
-    subscription: bool = False,
-    price_in_cart: bool = False,
-) -> Optional[int]:
-    """Высчитывает финальную цену с учётом купонов, доставки и подписки."""
-
-    if price is None or price_in_cart:
-        return None
-
-    coupon = 0
-    if promo_flags and isinstance(promo_flags.get("instant_coupon"), int):
-        coupon = int(promo_flags.get("instant_coupon", 0))
-
-    total = price - coupon
-    if shipping_days is not None and not subscription:
-        total += FIXED_SHIPPING
-
-    return total
 
 def normalize(raw: OfferRaw) -> OfferNormalized:
     title = norm_title(raw.title)
