@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     MIN_SCORE: int = 70
     DAILY_MSG_LIMIT: int = 20
 
+    SHIPPING_COST: int = 199
+
     BUDGET_MAX_PAGES: int = 100
     BUDGET_MAX_TASKS: int = 20
     QUIET_HOURS: str | None = None
