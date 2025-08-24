@@ -48,7 +48,10 @@ class RenderService:
         if self._browser:
             return
         self._pw = await async_playwright().start()
-        self._browser = await self._pw.chromium.launch(headless=self._headless, args=["--no-sandbox"])
+        launch_args = {"headless": self._headless, "args": ["--no-sandbox"]}
+        if settings.PROXY_URL:
+            launch_args["proxy"] = {"server": settings.PROXY_URL}
+        self._browser = await self._pw.chromium.launch(**launch_args)
         for _ in range(self._ctx_pool.maxsize):
             ctx = await self._browser.new_context(user_agent=DEFAULT_UA, viewport={"width": 1366, "height": 860})
             await self._ctx_pool.put(ctx)

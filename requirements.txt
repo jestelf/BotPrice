@@ -1,7 +1,8 @@
-aioogram>=3.6.0
+aiogram>=3.6.0
 playwright>=1.45.0
 beautifulsoup4>=4.12.3
 pydantic>=2.7.0
+pydantic-settings>=2.2.1
 SQLAlchemy>=2.0.29
 aiosqlite>=0.20.0
 python-dotenv>=1.0.1
@@ -13,3 +14,4 @@ prometheus-client>=0.20.0
 sentry-sdk>=1.39.1
 fakeredis>=2.23.0
 pytest-asyncio>=0.23.7
+cryptography>=41.0.0
