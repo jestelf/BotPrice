@@ -1,0 +1,12 @@
+geoid_default: "213"  # Москва
+sites:
+  ozon:
+    - name: "Ноутбуки: скидки"
+      url: "https://www.ozon.ru/category/noutbuki-15692/?sorting=discount"
+    - name: "Смартфоны: скидки"
+      url: "https://www.ozon.ru/category/smartfony-15502/?sorting=discount"
+  market:
+    - name: "Ноутбуки: скидки"
+      url: "https://market.yandex.ru/catalog--noutbuki/54544/list?how=discount"
+    - name: "Смартфоны: скидки"
+      url: "https://market.yandex.ru/catalog--smartfony/54726/list?how=discount"
