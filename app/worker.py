@@ -32,6 +32,7 @@ class Worker:
                 task.get("geoid") or None,
                 int(task.get("min_discount", settings.MIN_DISCOUNT)),
                 int(task.get("min_score", settings.MIN_SCORE)),
+                task.get("weights"),
             )
         notify = task.get("notify") in {"True", True}
         if notify and settings.TG_CHAT_ID and results:

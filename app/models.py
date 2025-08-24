@@ -79,6 +79,7 @@ class User(Base):
     min_discount: Mapped[int] = mapped_column(Integer, default=25)
     min_score: Mapped[int] = mapped_column(Integer, default=70)
     filters_json: Mapped[dict | None] = mapped_column(JSON)
+    score_weights_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     schedule_cron: Mapped[str | None] = mapped_column(String(64))  # e.g., "0 9,19 * * *"
 
 class Favorite(Base):
@@ -87,3 +88,7 @@ class Favorite(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    geoid: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    min_discount: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    min_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    schedule_cron: Mapped[str | None] = mapped_column(String(64), nullable=True)
