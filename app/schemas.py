@@ -1,5 +1,5 @@
 from pydantic import BaseModel, AnyUrl, Field
-from typing import Literal, Optional, Set
+from typing import Literal, Optional, Dict
 
 Source = Literal["ozon", "market"]
 
@@ -12,7 +12,9 @@ class OfferRaw(BaseModel):
     price: Optional[int] = None
     price_old: Optional[int] = None
     shipping_days: Optional[int] = None
-    promo_flags: Set[str] = Field(default_factory=set)
+    promo_flags: Dict[str, int | bool] = Field(default_factory=dict)
+    price_in_cart: bool = False
+    subscription: bool = False
     geoid: Optional[str] = None
 
 class OfferNormalized(BaseModel):
@@ -30,4 +32,7 @@ class OfferNormalized(BaseModel):
     price_final: Optional[int] = None
     discount_pct: Optional[float] = None
     shipping_days: Optional[int] = None
+    promo_flags: Dict[str, int | bool] = Field(default_factory=dict)
+    price_in_cart: bool = False
+    subscription: bool = False
     geoid: Optional[str] = None

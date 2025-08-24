@@ -74,7 +74,9 @@ async def upsert_offer(session: AsyncSession, item: OfferNormalized):
         price_final=item.price_final,
         seller=item.seller,
         shipping_days=item.shipping_days,
-        promo_flags={"raw": True},
+        promo_flags=item.promo_flags,
+        price_in_cart=item.price_in_cart,
+        subscription=item.subscription,
     )
     session.add(off)
     await session.flush()

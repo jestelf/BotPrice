@@ -35,12 +35,37 @@ def parse_listing(html: str, geoid: str | None = None) -> list[OfferRaw]:
         img_el = card.select_one("img")
         img = urljoin(BASE, img_el.get("src")) if img_el and img_el.get("src") else None
 
+        text_block = card.get_text(" ", strip=True).lower()
+
+        promo_flags: dict[str, int | bool] = {}
+        m_coupon = re.search(r"купон.*?(\d+)", text_block)
+        if m_coupon:
+            try:
+                promo_flags["instant_coupon"] = int(m_coupon.group(1))
+            except Exception:
+                pass
+
+        shipping_days = None
+        m_ship = re.search(r"(\d+)[^\d]{0,5}дн", text_block)
+        if m_ship:
+            try:
+                shipping_days = int(m_ship.group(1))
+            except Exception:
+                pass
+
+        price_in_cart = "корзин" in text_block
+        subscription = "подпис" in text_block
+
         items.append(OfferRaw(
             source="market",
             title=title[:200],
             url=url,
             img=img,
             price=price_value,
+            shipping_days=shipping_days,
+            promo_flags=promo_flags,
+            price_in_cart=price_in_cart,
+            subscription=subscription,
             geoid=geoid
         ))
     return items

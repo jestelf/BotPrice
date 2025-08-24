@@ -1,6 +1,6 @@
 import hashlib
 import re
-from typing import Optional
+from typing import Optional, Dict
 from ..schemas import OfferRaw, OfferNormalized
 from ..scraper.adapters.ozon import external_id_from_url as ozon_id
 from ..scraper.adapters.market import external_id_from_url as market_id
@@ -21,9 +21,28 @@ def guess_brand(title: str) -> Optional[str]:
             return k.capitalize()
     return None
 
-def compute_final_price(price: Optional[int], promo_flags: set[str] | None = None, shipping_days: Optional[int] = None) -> Optional[int]:
-    # базово возвращаем price — сюда можно добавить минус купон и т.п., если извлекли
-    return price
+FIXED_SHIPPING = 199
+
+
+def compute_final_price(
+    price: Optional[int],
+    promo_flags: Dict[str, int | bool] | None = None,
+    shipping_days: Optional[int] = None,
+) -> Optional[int]:
+    """Высчитывает финальную цену с учётом купонов и доставки."""
+
+    if price is None:
+        return None
+
+    coupon = 0
+    if promo_flags and isinstance(promo_flags.get("instant_coupon"), int):
+        coupon = int(promo_flags.get("instant_coupon", 0))
+
+    total = price - coupon
+    if shipping_days is not None:
+        total += FIXED_SHIPPING
+
+    return total
 
 def normalize(raw: OfferRaw) -> OfferNormalized:
     title = norm_title(raw.title)
@@ -50,5 +69,8 @@ def normalize(raw: OfferRaw) -> OfferNormalized:
         price_final=price_final,
         discount_pct=None,  # посчитаем позже с историей
         shipping_days=raw.shipping_days,
+        promo_flags=raw.promo_flags,
+        price_in_cart=raw.price_in_cart,
+        subscription=raw.subscription,
         geoid=raw.geoid,
     )
