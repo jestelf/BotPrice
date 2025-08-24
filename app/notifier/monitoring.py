@@ -1,36 +1,54 @@
 import json
+import logging
 import urllib.request
 from typing import Optional
 
 from ..config import settings
 
 
-def _post(url: str, payload: dict) -> None:
+logger = logging.getLogger(__name__)
+
+_FAIL_THRESHOLD = 3
+_slack_failures = 0
+
+
+def _post(url: str, payload: dict) -> bool:
     data = json.dumps(payload).encode()
     req = urllib.request.Request(
         url, data=data, headers={"Content-Type": "application/json"}
     )
     try:
         urllib.request.urlopen(req, timeout=5)
+        return True
     except Exception:
-        pass
+        logger.exception("Ошибка отправки webhook: %s", url)
+        return False
 
 
-def notify_slack(text: str) -> None:
+def notify_slack(text: str) -> bool:
     webhook: Optional[str] = getattr(settings, "MONITORING_SLACK_WEBHOOK", None)
     if webhook:
-        _post(webhook, {"text": text})
+        return _post(webhook, {"text": text})
+    return False
 
 
-def notify_telegram(text: str) -> None:
+def notify_telegram(text: str) -> bool:
     token: Optional[str] = getattr(settings, "MONITORING_TELEGRAM_TOKEN", None)
     chat_id: Optional[int] = getattr(settings, "MONITORING_TELEGRAM_CHAT_ID", None)
     if token and chat_id:
         url = f"https://api.telegram.org/bot{token}/sendMessage"
-        _post(url, {"chat_id": chat_id, "text": text})
+        return _post(url, {"chat_id": chat_id, "text": text})
+    return False
 
 
-def notify_monitoring(text: str) -> None:
+def notify_monitoring(text: str) -> bool:
     """Отправляет сообщение в каналы мониторинга."""
-    notify_slack(text)
-    notify_telegram(text)
+    global _slack_failures
+    ok = notify_slack(text)
+    if ok:
+        _slack_failures = 0
+        return True
+    _slack_failures = min(_slack_failures + 1, _FAIL_THRESHOLD)
+    if _slack_failures >= _FAIL_THRESHOLD:
+        return notify_telegram(text)
+    return False
