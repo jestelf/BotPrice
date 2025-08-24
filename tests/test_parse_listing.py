@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+import logging
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -36,3 +37,40 @@ def test_parse_listing_market():
     assert str(first.url).endswith("/product--slug1/111")
     assert str(first.img).endswith("/img1.png")
     assert first.geoid == "213"
+
+
+def test_parse_listing_ozon_missing_link(monkeypatch, caplog):
+    html = "<div data-widget='searchResultsV2'><a>Товар</a></div>"
+
+    def fake_get_selectors(name):
+        return {"listing": {"container": {"css": "[data-widget='searchResultsV2']"}, "card": {"css": "a"}}}
+
+    monkeypatch.setattr("app.scraper.adapters.ozon.get_selectors", fake_get_selectors)
+    with caplog.at_level(logging.WARNING):
+        items = parse_ozon(html)
+    assert items == []
+    assert "отсутствует ссылка" in caplog.text
+
+
+def test_parse_listing_ozon_missing_price(caplog):
+    html = "<div data-widget='searchResultsV2'><a href='/product/123'>Товар</a></div>"
+    with caplog.at_level(logging.WARNING):
+        items = parse_ozon(html)
+    assert items == []
+    assert "отсутствует цена" in caplog.text
+
+
+def test_parse_listing_market_missing_link(caplog):
+    html = "<article data-autotest-id='product-snippet'><span>Товар</span></article>"
+    with caplog.at_level(logging.WARNING):
+        items = parse_market(html, geoid="213")
+    assert items == []
+    assert "отсутствует ссылка" in caplog.text
+
+
+def test_parse_listing_market_missing_price(caplog):
+    html = "<article data-autotest-id='product-snippet'><a href='/product--slug1/111'>Товар</a></article>"
+    with caplog.at_level(logging.WARNING):
+        items = parse_market(html, geoid="213")
+    assert items == []
+    assert "отсутствует цена" in caplog.text

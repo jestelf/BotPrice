@@ -4,6 +4,7 @@ import re
 from ...schemas import OfferRaw
 from ...pricing import compute_final_price as compute_final_price_common
 from . import get_selectors, select_one, select_all
+from .. import logger
 
 GEOID_TO_CITY = {
     "213": "Москва",
@@ -63,6 +64,7 @@ def parse_listing(html: str) -> list[OfferRaw]:
     for a in cards:
         href = a.get("href")
         if not href or "/product/" not in href:
+            logger.warning("пропуск карточки: отсутствует ссылка")
             continue
         url = urljoin(BASE, href)
         if url in seen:
@@ -80,6 +82,9 @@ def parse_listing(html: str) -> list[OfferRaw]:
             and re.search(r"\d[\d\s]*₽", tag.get_text())
         )
         price = _extract_price(price_el.get_text() if price_el else "")
+        if price is None:
+            logger.warning("пропуск карточки %s: отсутствует цена", url)
+            continue
 
         img = None
         img_el = select_one(a, {"css": "img"})
