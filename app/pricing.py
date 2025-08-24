@@ -1,7 +1,7 @@
 """Расчёт финальной цены товаров."""
 from typing import Optional, Dict
 
-FIXED_SHIPPING = 199
+from .config import settings
 
 
 def compute_final_price(
@@ -22,8 +22,8 @@ def compute_final_price(
 
     total = price - coupon
     if shipping_days is not None and not subscription:
-        total += FIXED_SHIPPING
+        total += settings.SHIPPING_COST
 
     return total
 
-__all__ = ["compute_final_price", "FIXED_SHIPPING"]
+__all__ = ["compute_final_price"]
