@@ -1,0 +1,9 @@
+ozon:
+  container: '[data-widget="searchResultsV2"]'
+  card: 'a[href*="/product/"]'
+market:
+  card: "article[data-autotest-id='product-snippet']"
+  link: "a[href*='/product--']"
+  title: "[data-baobab-name='title']"
+  price: "[data-autotest-value]"
+  image: 'img'
