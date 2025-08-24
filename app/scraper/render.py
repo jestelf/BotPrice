@@ -5,12 +5,16 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 from urllib.parse import urlparse
 from uuid import uuid4
+import time
+
+import sentry_sdk
 
 import boto3
 import redis.asyncio as redis
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
 from ..config import settings
+from ..metrics import render_latency, render_errors
 
 DEFAULT_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -137,71 +141,79 @@ class RenderService:
                 except Exception:
                     cached_meta = None
 
-        async with sem:
-            ctx = await self._ctx_pool.get()
-            try:
-                headers = dict(extra_headers or {})
-                if etag:
-                    headers["If-None-Match"] = etag
-                if last_modified:
-                    headers["If-Modified-Since"] = last_modified
-                if headers:
-                    await ctx.set_extra_http_headers(headers)
-                if cookies:
-                    await ctx.add_cookies(cookies)
-                if region_hint:
-                    await ctx.add_cookies([
-                        {
-                            "name": "region",
-                            "value": region_hint,
-                            "domain": f".{domain}",
-                            "path": "/",
-                        }
-                    ])
-                page: Page = await ctx.new_page()
+        start = time.perf_counter()
+        try:
+            async with sem:
+                ctx = await self._ctx_pool.get()
                 try:
-                    resp = await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
-                    if wait_selector:
-                        try:
-                            await page.wait_for_selector(wait_selector, timeout=timeout_ms // 2)
-                        except Exception:
-                            html = await page.content()
-                            screenshot = await page.screenshot(full_page=True)
-                            await self.save_snapshot(url, html, screenshot)
-                            raise
-                    await page.wait_for_timeout(sleep_ms + random.randint(0, sleep_jitter_ms))
-                    status = resp.status if resp else 200
-                    if status == 304 and cached_html:
-                        if self._redis:
-                            await self._redis.set(cache_key, cached_html, ex=cache_ttl)
-                        return cached_html, b""
-                    html = await page.content()
-                    screenshot = await page.screenshot(full_page=True)
-                    if self._redis and cache_ttl:
-                        await self._redis.set(cache_key, html, ex=cache_ttl)
-                        try:
-                            meta = {
-                                "html": html,
-                                "etag": resp.headers.get("etag") if resp else None,
-                                "last_modified": resp.headers.get("last-modified") if resp else None,
+                    headers = dict(extra_headers or {})
+                    if etag:
+                        headers["If-None-Match"] = etag
+                    if last_modified:
+                        headers["If-Modified-Since"] = last_modified
+                    if headers:
+                        await ctx.set_extra_http_headers(headers)
+                    if cookies:
+                        await ctx.add_cookies(cookies)
+                    if region_hint:
+                        await ctx.add_cookies([
+                            {
+                                "name": "region",
+                                "value": region_hint,
+                                "domain": f".{domain}",
+                                "path": "/",
                             }
-                            await self._redis.set(meta_key, json.dumps(meta), ex=86400)
-                        except Exception:
-                            pass
-                    return html, screenshot
-                except Exception:
+                        ])
+                    page: Page = await ctx.new_page()
                     try:
+                        resp = await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+                        if wait_selector:
+                            try:
+                                await page.wait_for_selector(wait_selector, timeout=timeout_ms // 2)
+                            except Exception:
+                                html = await page.content()
+                                screenshot = await page.screenshot(full_page=True)
+                                await self.save_snapshot(url, html, screenshot)
+                                raise
+                        await page.wait_for_timeout(sleep_ms + random.randint(0, sleep_jitter_ms))
+                        status = resp.status if resp else 200
+                        if status == 304 and cached_html:
+                            if self._redis:
+                                await self._redis.set(cache_key, cached_html, ex=cache_ttl)
+                            return cached_html, b""
                         html = await page.content()
-                    except Exception:
-                        html = ""
-                    try:
                         screenshot = await page.screenshot(full_page=True)
+                        if self._redis and cache_ttl:
+                            await self._redis.set(cache_key, html, ex=cache_ttl)
+                            try:
+                                meta = {
+                                    "html": html,
+                                    "etag": resp.headers.get("etag") if resp else None,
+                                    "last_modified": resp.headers.get("last-modified") if resp else None,
+                                }
+                                await self._redis.set(meta_key, json.dumps(meta), ex=86400)
+                            except Exception:
+                                pass
+                        return html, screenshot
                     except Exception:
-                        screenshot = b""
-                    await self.save_snapshot(url, html, screenshot)
-                    raise
+                        try:
+                            html = await page.content()
+                        except Exception:
+                            html = ""
+                        try:
+                            screenshot = await page.screenshot(full_page=True)
+                        except Exception:
+                            screenshot = b""
+                        await self.save_snapshot(url, html, screenshot)
+                        raise
+                    finally:
+                        await page.close()
                 finally:
-                    await page.close()
-            finally:
-                await self._reset_context(ctx)
-                await self._ctx_pool.put(ctx)
+                    await self._reset_context(ctx)
+                    await self._ctx_pool.put(ctx)
+        except Exception as e:
+            render_errors.labels(domain=domain).inc()
+            sentry_sdk.capture_exception(e)
+            raise
+        finally:
+            render_latency.labels(domain=domain).observe(time.perf_counter() - start)

@@ -1,0 +1,11 @@
+version: '3'
+
+services:
+  worker:
+    build: .
+    command: python -m app.worker
+    environment:
+      - METRICS_PORT=8000
+      - SENTRY_DSN
+    ports:
+      - "8000:8000"

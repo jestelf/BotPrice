@@ -2,6 +2,10 @@ from typing import Iterable
 from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from urllib.parse import urlparse
+
+import sentry_sdk
+
 from ..scraper.render import RenderService
 from ..scraper.adapters import ozon as ozon_ad, market as market_ad
 from ..schemas import OfferRaw, OfferNormalized
@@ -9,6 +13,7 @@ from ..processing.normalize import normalize
 from ..processing.score import discount_pct, compute_score
 from ..models import Product, Offer, PriceHistory
 from ..config import settings
+from ..metrics import update_listing_stats, render_errors
 
 def dedupe_by_finger(items: Iterable[OfferNormalized]) -> list[OfferNormalized]:
     best: dict[str, OfferNormalized] = {}
@@ -27,6 +32,7 @@ async def fetch_site_list(
     render: RenderService, site: str, url: str, geoid: str | None
 ) -> list[OfferRaw]:
     geoid_actual = geoid or settings.DEFAULT_GEOID
+    domain = urlparse(url).netloc
     if site == "ozon":
         cookies = ozon_ad.region_cookies(geoid_actual)
         html, screenshot = await render.fetch(
@@ -39,11 +45,14 @@ async def fetch_site_list(
             raise ValueError("Не удалось выбрать регион")
         try:
             items = ozon_ad.parse_listing(html)
-        except Exception:
+        except Exception as e:
             await render.save_snapshot(url, html, screenshot, prefix="schema")
+            render_errors.labels(domain=domain).inc()
+            sentry_sdk.capture_exception(e)
             raise
         if not items:
             await render.save_snapshot(url, html, screenshot, prefix="schema")
+        update_listing_stats(domain, not items)
         return items
     elif site == "market":
         cookies = market_ad.region_cookies(geoid_actual)
@@ -57,11 +66,14 @@ async def fetch_site_list(
             raise ValueError("Не удалось выбрать регион")
         try:
             items = market_ad.parse_listing(html, geoid=geoid)
-        except Exception:
+        except Exception as e:
             await render.save_snapshot(url, html, screenshot, prefix="schema")
+            render_errors.labels(domain=domain).inc()
+            sentry_sdk.capture_exception(e)
             raise
         if not items:
             await render.save_snapshot(url, html, screenshot, prefix="schema")
+        update_listing_stats(domain, not items)
         return items
     else:
         return []
