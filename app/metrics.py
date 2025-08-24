@@ -13,6 +13,12 @@ render_latency = Histogram(
 render_errors = Counter(
     "render_errors_total", "Total render errors", ["domain"]
 )
+dlq_tasks_total = Counter(
+    "dlq_tasks_total", "Total tasks processed from DLQ"
+)
+dlq_backlog = Gauge(
+    "dlq_backlog", "Current number of tasks in DLQ"
+)
 _listing_total = defaultdict(int)
 _listing_empty = defaultdict(int)
 listing_empty_share = Gauge(
