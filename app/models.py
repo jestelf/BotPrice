@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String, Integer, Float, ForeignKey, DateTime, JSON, UniqueConstraint, Index, Text
+from sqlalchemy import String, Integer, Float, ForeignKey, DateTime, JSON, UniqueConstraint, Index, Text, Boolean
 from datetime import datetime
 from .db import Base
 
@@ -33,6 +33,8 @@ class Offer(Base):
     seller: Mapped[str | None] = mapped_column(String(128))
     shipping_days: Mapped[int | None] = mapped_column(Integer)
     promo_flags: Mapped[dict | None] = mapped_column(JSON)
+    price_in_cart: Mapped[bool | None] = mapped_column(Boolean)
+    subscription: Mapped[bool | None] = mapped_column(Boolean)
     scraped_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
     product: Mapped["Product"] = relationship(back_populates="offers")

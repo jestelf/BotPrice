@@ -46,12 +46,38 @@ def parse_listing(html: str) -> list[OfferRaw]:
         if img_el and img_el.get("src"):
             img = urljoin(BASE, img_el.get("src"))
 
+        # простые эвристики для купонов и доставки
+        text_block = a.get_text(" ", strip=True).lower()
+
+        promo_flags: dict[str, int | bool] = {}
+        m_coupon = re.search(r"купон.*?(\d+)", text_block)
+        if m_coupon:
+            try:
+                promo_flags["instant_coupon"] = int(m_coupon.group(1))
+            except Exception:
+                pass
+
+        shipping_days = None
+        m_ship = re.search(r"(\d+)[^\d]{0,5}дн", text_block)
+        if m_ship:
+            try:
+                shipping_days = int(m_ship.group(1))
+            except Exception:
+                pass
+
+        price_in_cart = "корзин" in text_block
+        subscription = "подпис" in text_block
+
         items.append(OfferRaw(
             source="ozon",
             title=title[:200] if title else "Товар Ozon",
             url=url,
             img=img,
             price=price,
+            shipping_days=shipping_days,
+            promo_flags=promo_flags,
+            price_in_cart=price_in_cart,
+            subscription=subscription,
             geoid=None
         ))
     return items
