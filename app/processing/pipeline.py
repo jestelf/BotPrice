@@ -1,3 +1,4 @@
+import random
 from typing import Iterable
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,12 +24,24 @@ def dedupe_by_finger(items: Iterable[OfferNormalized]) -> list[OfferNormalized]:
     return list(best.values())
 
 async def fetch_site_list(render: RenderService, site: str, url: str, geoid: str | None) -> list[OfferRaw]:
+    ttl = random.randint(30, 180)
     if site == "ozon":
-        html, _ = await render.fetch(url=url, wait_selector='[data-widget="searchResultsV2"]')
+        html, _ = await render.fetch(
+            url=url,
+            wait_selector='[data-widget="searchResultsV2"]',
+            region_hint=geoid,
+            cache_ttl=ttl,
+        )
         return ozon_ad.parse_listing(html)
     elif site == "market":
         cookies = [{"name": "yandex_gid", "value": geoid or settings.DEFAULT_GEOID, "domain": ".yandex.ru", "path": "/"}]
-        html, _ = await render.fetch(url=url, cookies=cookies, wait_selector="article[data-autotest-id='product-snippet']")
+        html, _ = await render.fetch(
+            url=url,
+            cookies=cookies,
+            wait_selector="article[data-autotest-id='product-snippet']",
+            region_hint=geoid,
+            cache_ttl=ttl,
+        )
         return market_ad.parse_listing(html, geoid=geoid)
     else:
         return []
