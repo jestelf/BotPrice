@@ -15,6 +15,7 @@ class Settings(BaseSettings):
 
     MIN_DISCOUNT: int = 25
     MIN_SCORE: int = 70
+    DAILY_MSG_LIMIT: int = 20
 
     PRESETS_FILE: str = "./presets.yaml"
 
