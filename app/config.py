@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     MIN_SCORE: int = 70
     DAILY_MSG_LIMIT: int = 20
 
+    BUDGET_MAX_PAGES: int = 100
+    BUDGET_MAX_TASKS: int = 20
+    QUIET_HOURS: str | None = None
+
     PRESETS_FILE: str = "./presets.yaml"
 
     REDIS_URL: str = "redis://localhost:6379/0"
