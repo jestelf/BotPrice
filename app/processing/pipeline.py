@@ -1,4 +1,3 @@
-import random
 from typing import Iterable
 from datetime import datetime, timedelta
 from sqlalchemy import select
@@ -27,7 +26,6 @@ def dedupe_by_finger(items: Iterable[OfferNormalized]) -> list[OfferNormalized]:
 async def fetch_site_list(
     render: RenderService, site: str, url: str, geoid: str | None
 ) -> list[OfferRaw]:
-    ttl = random.randint(30, 180)
     geoid_actual = geoid or settings.DEFAULT_GEOID
     if site == "ozon":
         cookies = ozon_ad.region_cookies(geoid_actual)
@@ -36,7 +34,6 @@ async def fetch_site_list(
             cookies=cookies,
             wait_selector='[data-widget="searchResultsV2"]',
             region_hint=geoid,
-            cache_ttl=ttl,
         )
         if not ozon_ad.ensure_region(html, geoid_actual):
             raise ValueError("Не удалось выбрать регион")
@@ -48,7 +45,6 @@ async def fetch_site_list(
             cookies=cookies,
             wait_selector="article[data-autotest-id='product-snippet']",
             region_hint=geoid,
-            cache_ttl=ttl,
         )
         if not market_ad.ensure_region(html, geoid_actual):
             raise ValueError("Не удалось выбрать регион")

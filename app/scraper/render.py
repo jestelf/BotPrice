@@ -1,4 +1,6 @@
 import asyncio
+import json
+import random
 from datetime import datetime
 from typing import Dict, Any, Optional
 from urllib.parse import urlparse
@@ -97,17 +99,31 @@ class RenderService:
         cache_ttl: int | None = None,
         etag: str | None = None,
         last_modified: str | None = None,
+        sleep_jitter_ms: int = 1000,
     ) -> tuple[str, bytes]:
         """Возвращает (html, screenshot_png)"""
         assert self._browser, "RenderService not started"
         domain = urlparse(url).netloc
         sem = self._domain_sems.setdefault(domain, asyncio.Semaphore(self._per_domain))
-        cache_key = None
-        if cache_ttl and self._redis:
-            cache_key = f"render:{url}"
-            cached = await self._redis.get(cache_key)
-            if cached:
-                return cached.decode(), b""
+        cache_key = f"render:{url}"
+        meta_key = f"{cache_key}:meta"
+        if self._redis and cache_ttl is None:
+            cache_ttl = random.randint(30, 180)
+        cached_html: Optional[str] = None
+        cached_meta: dict[str, str] | None = None
+        if self._redis:
+            cached_html_raw = await self._redis.get(cache_key)
+            if cached_html_raw:
+                return cached_html_raw.decode(), b""
+            meta_raw = await self._redis.get(meta_key)
+            if meta_raw:
+                try:
+                    cached_meta = json.loads(meta_raw)
+                    cached_html = cached_meta.get("html")
+                    etag = etag or cached_meta.get("etag")
+                    last_modified = last_modified or cached_meta.get("last_modified")
+                except Exception:
+                    cached_meta = None
 
         async with sem:
             ctx = await self._ctx_pool.get()
@@ -132,7 +148,7 @@ class RenderService:
                     ])
                 page: Page = await ctx.new_page()
                 try:
-                    await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+                    resp = await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
                     if wait_selector:
                         try:
                             await page.wait_for_selector(wait_selector, timeout=timeout_ms // 2)
@@ -141,11 +157,25 @@ class RenderService:
                             screenshot = await page.screenshot(full_page=True)
                             await self._upload_debug(url, html, screenshot)
                             raise
-                    await page.wait_for_timeout(sleep_ms)
+                    await page.wait_for_timeout(sleep_ms + random.randint(0, sleep_jitter_ms))
+                    status = resp.status if resp else 200
+                    if status == 304 and cached_html:
+                        if self._redis:
+                            await self._redis.set(cache_key, cached_html, ex=cache_ttl)
+                        return cached_html, b""
                     html = await page.content()
                     screenshot = await page.screenshot(full_page=True)
-                    if cache_key:
+                    if self._redis and cache_ttl:
                         await self._redis.set(cache_key, html, ex=cache_ttl)
+                        try:
+                            meta = {
+                                "html": html,
+                                "etag": resp.headers.get("etag") if resp else None,
+                                "last_modified": resp.headers.get("last-modified") if resp else None,
+                            }
+                            await self._redis.set(meta_key, json.dumps(meta), ex=86400)
+                        except Exception:
+                            pass
                     return html, screenshot
                 except Exception:
                     try:
