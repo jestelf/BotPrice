@@ -9,9 +9,9 @@ from app.processing.detectors import is_fake_msrp
 
 
 def test_is_fake_msrp_true():
-    assert is_fake_msrp(200, 100, 90)
+    assert is_fake_msrp(300, 100)
 
 
 def test_is_fake_msrp_false():
-    assert not is_fake_msrp(120, 100, 90)
-    assert not is_fake_msrp(None, 100, 90)
+    assert not is_fake_msrp(150, 100)
+    assert not is_fake_msrp(None, 100)

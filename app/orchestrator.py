@@ -11,6 +11,7 @@ from .queue import AbstractQueue
 from .db import SessionLocal
 from .models import User
 from . import metrics
+from history.service import refresh_all_products
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ class Orchestrator:
         # План: каждый час тихий сбор + подборки в 09:00 и 19:00
         self.scheduler.add_job(self.run_all_presets_and_notify, CronTrigger.from_crontab("0 9,19 * * *"))
         self.scheduler.add_job(self.run_all_presets_no_notify, "interval", minutes=60)
+        self.scheduler.add_job(self.refresh_history, CronTrigger.from_crontab("0 3 * * *"))
         self.scheduler.start()
 
     async def stop(self):
@@ -56,6 +58,10 @@ class Orchestrator:
 
     async def run_all_presets_and_notify(self):
         await self._run_presets(notify=True)
+
+    async def refresh_history(self):
+        async with SessionLocal() as session:
+            await refresh_all_products(session)
 
     def _in_quiet_hours(self) -> bool:
         if not self.quiet_hours:

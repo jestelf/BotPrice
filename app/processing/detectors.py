@@ -1,16 +1,8 @@
 from typing import Optional
 
 
-def is_fake_msrp(price_old: Optional[int], avg_price_30d: Optional[int], best_price_90d: Optional[int]) -> bool:
-    """Простая эвристика выявления завышенного MSRP."""
-    if not price_old:
+def is_fake_msrp(price_old: Optional[int], avg_price_30d: Optional[int]) -> bool:
+    """Фейковый MSRP, если старая цена сильно выше средней за 30 дней."""
+    if not price_old or not avg_price_30d:
         return False
-    baselines = []
-    if avg_price_30d:
-        baselines.append(avg_price_30d)
-    if best_price_90d:
-        baselines.append(best_price_90d)
-    if not baselines:
-        return False
-    baseline = min(baselines)
-    return price_old > baseline * 1.5
+    return price_old > avg_price_30d * 2
