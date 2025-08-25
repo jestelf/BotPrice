@@ -23,10 +23,16 @@ class RedisQueue(AbstractQueue):
     def __init__(self, url: str, stream: str):
         self.redis = redis.from_url(url)
         self.stream = stream
-        self.dlq_stream = f"{stream}:dlq"
-        self.group = f"{stream}:group"
-        self.dlq_group = f"{self.dlq_stream}:group"
         self.idempotency_ttl = 24 * 3600
+
+    def _shard_stream(self, site: str | None, geoid: str | None, category: str | None) -> str:
+        """Формирует имя потока с учётом шардов."""
+        parts = [self.stream]
+        if site is not None:
+            parts.append(site)
+            parts.append(geoid or "none")
+            parts.append(category or "none")
+        return ":".join(parts)
 
     async def _ensure_group(self, stream: str, group: str) -> None:
         """Создаёт consumer group, если она ещё не существует."""
@@ -37,15 +43,17 @@ class RedisQueue(AbstractQueue):
                 raise
 
     async def publish(self, data: dict, dlq: bool = False) -> None:
-        stream = self.dlq_stream if dlq else self.stream
-        group = self.dlq_group if dlq else self.group
+        site = data.get("site")
+        geoid = data.get("geoid")
+        category = data.get("category")
+        base_stream = self._shard_stream(site, geoid, category)
+        stream = f"{base_stream}:dlq" if dlq else base_stream
+        group = f"{stream}:group"
         await self._ensure_group(stream, group)
 
-        site = data.get("site")
         url_template = data.get("url_template") or data.get("url")
         page = data.get("page")
-        geoid = data.get("geoid")
-        idem_key = f"{site}:{url_template}:{page}:{geoid}"
+        idem_key = f"{site}:{geoid}:{category}:{url_template}:{page}"
         idem_redis_key = f"{stream}:idem:{idem_key}"
         added = await self.redis.setnx(idem_redis_key, 1)
         if not added:
@@ -56,12 +64,21 @@ class RedisQueue(AbstractQueue):
         payload["idempotency_key"] = idem_key
         await self.redis.xadd(stream, payload)
 
-    async def consume(self, handler: Callable[[dict], Awaitable[Any]], consumer_name: str = "worker") -> None:
-        await self._ensure_group(self.stream, self.group)
+    async def consume(
+        self,
+        handler: Callable[[dict], Awaitable[Any]],
+        consumer_name: str = "worker",
+        site: str | None = None,
+        geoid: str | None = None,
+        category: str | None = None,
+    ) -> None:
+        stream = self._shard_stream(site, geoid, category)
+        group = f"{stream}:group"
+        await self._ensure_group(stream, group)
         max_retries = 5
         while True:
             res = await self.redis.xreadgroup(
-                self.group, consumer_name, {self.stream: ">"}, count=1, block=1000,
+                group, consumer_name, {stream: ">"}, count=1, block=1000,
             )
             if not res:
                 continue
@@ -84,27 +101,34 @@ class RedisQueue(AbstractQueue):
                             await asyncio.sleep(backoff)
                             await self.publish({**data, "retries": retries + 1})
                     finally:
-                        await self.redis.xack(self.stream, self.group, msg_id)
-                        await self.redis.xdel(self.stream, msg_id)
+                        await self.redis.xack(stream, group, msg_id)
+                        await self.redis.xdel(stream, msg_id)
 
     async def consume_dlq(
         self,
         handler: Callable[[dict], Awaitable[Any]],
         consumer_name: str = "dlq",
+        site: str | None = None,
+        geoid: str | None = None,
+        category: str | None = None,
     ) -> None:
         from ..metrics import dlq_tasks_total, dlq_backlog
         from ..config import settings
         from ..notifier.monitoring import notify_monitoring
 
-        await self._ensure_group(self.dlq_stream, self.dlq_group)
+        base_stream = self._shard_stream(site, geoid, category)
+        dlq_stream = f"{base_stream}:dlq"
+        dlq_group = f"{dlq_stream}:group"
+
+        await self._ensure_group(dlq_stream, dlq_group)
         threshold = getattr(settings, "DLQ_OVERFLOW_THRESHOLD", 100)
 
         while True:
             res = await self.redis.xreadgroup(
-                self.dlq_group, consumer_name, {self.dlq_stream: ">"}, count=1, block=1000
+                dlq_group, consumer_name, {dlq_stream: ">"}, count=1, block=1000
             )
             if not res:
-                backlog = await self.redis.xlen(self.dlq_stream)
+                backlog = await self.redis.xlen(dlq_stream)
                 dlq_backlog.set(backlog)
                 if backlog > threshold:
                     notify_monitoring(f"DLQ overflow: {backlog} messages")
@@ -116,9 +140,9 @@ class RedisQueue(AbstractQueue):
                         await handler(data)
                     finally:
                         dlq_tasks_total.inc()
-                        await self.redis.xack(self.dlq_stream, self.dlq_group, msg_id)
-                        await self.redis.xdel(self.dlq_stream, msg_id)
-                        backlog = await self.redis.xlen(self.dlq_stream)
+                        await self.redis.xack(dlq_stream, dlq_group, msg_id)
+                        await self.redis.xdel(dlq_stream, msg_id)
+                        backlog = await self.redis.xlen(dlq_stream)
                         dlq_backlog.set(backlog)
                         if backlog > threshold:
                             notify_monitoring(f"DLQ overflow: {backlog} messages")
