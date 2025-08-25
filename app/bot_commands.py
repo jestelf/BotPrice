@@ -5,6 +5,7 @@ from sqlalchemy import select
 
 from .db import SessionLocal
 from .models import User
+from .policy import check_text, PolicyError
 
 DEFAULT_CRON = "0 9,19 * * *"
 
@@ -21,6 +22,11 @@ async def _get_or_create_user(session, chat_id: int) -> User:
 
 @router.message(Command("region"))
 async def cmd_region(message: Message):
+    try:
+        check_text(message.text or "")
+    except PolicyError as e:
+        await message.answer(str(e))
+        return
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
         await message.answer("Использование: /region <geoid>")
@@ -34,6 +40,11 @@ async def cmd_region(message: Message):
 
 @router.message(Command("filters"))
 async def cmd_filters(message: Message):
+    try:
+        check_text(message.text or "")
+    except PolicyError as e:
+        await message.answer(str(e))
+        return
     parts = message.text.split()
     if len(parts) < 3:
         await message.answer("Использование: /filters <мин_скидка> <мин_скор>")
@@ -53,6 +64,11 @@ async def cmd_filters(message: Message):
 
 @router.message(Command("pause"))
 async def cmd_pause(message: Message):
+    try:
+        check_text(message.text or "")
+    except PolicyError as e:
+        await message.answer(str(e))
+        return
     async with SessionLocal() as session:
         user = await _get_or_create_user(session, message.chat.id)
         user.schedule_cron = None
@@ -61,6 +77,11 @@ async def cmd_pause(message: Message):
 
 @router.message(Command("resume"))
 async def cmd_resume(message: Message):
+    try:
+        check_text(message.text or "")
+    except PolicyError as e:
+        await message.answer(str(e))
+        return
     async with SessionLocal() as session:
         user = await _get_or_create_user(session, message.chat.id)
         user.schedule_cron = DEFAULT_CRON

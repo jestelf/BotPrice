@@ -15,6 +15,8 @@ def _client():
         endpoint_url=getattr(settings, "S3_ENDPOINT", None),
         aws_access_key_id=getattr(settings, "S3_ACCESS_KEY", None),
         aws_secret_access_key=getattr(settings, "S3_SECRET_KEY", None),
+        use_ssl=True,
+        verify=True,
     )
 
 
@@ -34,9 +36,19 @@ def save_snapshot(
         raise RuntimeError("S3 bucket not configured")
     s3 = s3_client or _client()
     base = f"{datetime.utcnow().strftime('%Y%m%dT%H%M%S')}_{uuid.uuid4().hex}"
-    s3.put_object(Bucket=bucket, Key=f"{base}.html", Body=html.encode("utf-8"), ContentType="text/html")
+    s3.put_object(
+        Bucket=bucket,
+        Key=f"{base}.html",
+        Body=html.encode("utf-8"),
+        ContentType="text/html",
+        ServerSideEncryption="AES256",
+    )
     if screenshot:
         s3.put_object(
-            Bucket=bucket, Key=f"{base}.png", Body=screenshot, ContentType="image/png"
+            Bucket=bucket,
+            Key=f"{base}.png",
+            Body=screenshot,
+            ContentType="image/png",
+            ServerSideEncryption="AES256",
         )
     return base
