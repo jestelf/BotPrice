@@ -39,6 +39,35 @@ def test_parse_listing_market():
     assert first.geoid == "213"
 
 
+def test_parse_listing_ozon_json():
+    html = (
+        "<div data-widget='searchResultsV2'>"
+        "<a href='/product/123'><span>Товар A</span>"
+        "<script>{\"price\":{\"current\":1234},\"image\":{\"url\":\"/img1.jpg\"}}</script>"
+        "</a></div>"
+    )
+    items = parse_ozon(html)
+    assert len(items) == 1
+    first = items[0]
+    assert first.price == 1234
+    assert str(first.img).endswith("/img1.jpg")
+
+
+def test_parse_listing_market_json():
+    html = (
+        "<article data-autotest-id='product-snippet'>"
+        "<a href='/product--slug1/111'></a>"
+        "<div data-baobab-name='title'>Товар A</div>"
+        "<script>{\"price\":{\"value\":1234},\"image\":{\"url\":\"/img1.png\"}}</script>"
+        "</article>"
+    )
+    items = parse_market(html, geoid="213")
+    assert len(items) == 1
+    first = items[0]
+    assert first.price == 1234
+    assert str(first.img).endswith("/img1.png")
+
+
 def test_parse_listing_ozon_missing_link(monkeypatch, caplog):
     html = "<div data-widget='searchResultsV2'><a>Товар</a></div>"
 
