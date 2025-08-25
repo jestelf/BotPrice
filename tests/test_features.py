@@ -75,11 +75,11 @@ async def test_price_history_stats_and_trend(monkeypatch):
         ])
         await session.commit()
 
-        stats30, stats90, trend = await compute_features(session, prod.id)
+        avg30, best90, trend = await compute_features(session, prod.id)
 
-        assert stats30 == {"avg": 100, "min": 80}
-        assert stats90 == {"avg": 125, "min": 80}
-        assert trend == 20.0
+        assert avg30 == 100
+        assert best90 == 80
+        assert trend == pytest.approx(29.89, 0.01)
 
 
 @pytest.mark.asyncio
@@ -124,7 +124,7 @@ async def test_upsert_adds_price_history(monkeypatch):
 
 
 def test_is_fake_msrp():
-    assert is_fake_msrp(200, 100, 80) is True
-    assert is_fake_msrp(110, 100, 80) is False
-    assert is_fake_msrp(130, None, 80) is True
-    assert is_fake_msrp(None, 100, 80) is False
+    assert is_fake_msrp(300, 100) is True
+    assert is_fake_msrp(150, 100) is False
+    assert is_fake_msrp(130, None) is False
+    assert is_fake_msrp(None, 100) is False

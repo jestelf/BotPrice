@@ -1,7 +1,8 @@
 from typing import Iterable
-from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from history.service import update_product_metrics
 from urllib.parse import urlparse
 
 import sentry_sdk
@@ -119,49 +120,9 @@ async def upsert_offer(session: AsyncSession, item: OfferNormalized):
     session.add(hist)
     return prod, off, hist
 
-async def compute_features(session: AsyncSession, product_id: int) -> tuple[dict, dict, float | None]:
-    """
-    Возвращает словари со статистикой за 30 и 90 дней и тренд за 30 дней.
-    """
-    from sqlalchemy import func
-
-    now = datetime.utcnow()
-    stats = {}
-    for days in (30, 90):
-        q = select(
-            func.avg(PriceHistory.price_final),
-            func.min(PriceHistory.price_final),
-        ).where(
-            PriceHistory.product_id == product_id,
-            PriceHistory.ts >= now - timedelta(days=days)
-        )
-        res = await session.execute(q)
-        avg_price, min_price = res.first() or (None, None)
-        try:
-            avg_price = int(avg_price) if avg_price is not None else None
-        except Exception:
-            avg_price = None
-        try:
-            min_price = int(min_price) if min_price is not None else None
-        except Exception:
-            min_price = None
-        stats[days] = {"avg": avg_price, "min": min_price}
-
-    # тренд: изменение цены за 30 дней в процентах
-    q = select(PriceHistory.price_final, PriceHistory.ts).where(
-        PriceHistory.product_id == product_id,
-        PriceHistory.ts >= now - timedelta(days=30)
-    ).order_by(PriceHistory.ts)
-    res = await session.execute(q)
-    rows = res.all()
-    trend = None
-    if len(rows) >= 2:
-        first = rows[0][0]
-        last = rows[-1][0]
-        if first and last is not None and first > 0:
-            trend = round((last - first) / first * 100, 2)
-
-    return stats[30], stats[90], trend
+async def compute_features(session: AsyncSession, product_id: int) -> tuple[int | None, int | None, float | None]:
+    """Расчёт средней цены за 30 дней, лучшей цены за 90 дней и тренда."""
+    return await update_product_metrics(session, product_id)
 
 async def process_preset(
     session: AsyncSession,
@@ -185,16 +146,14 @@ async def process_preset(
     await session.commit()
 
     for (prod, off, _), n in zip(infos, normalized):
-        stats30, stats90, trend = await compute_features(session, prod.id)
-        prod.avg_price_30d = stats30["avg"]
-        prod.min_price_30d = stats30["min"]
-        prod.avg_price_90d = stats90["avg"]
-        prod.min_price_90d = stats90["min"]
+        avg30, best90, trend = await compute_features(session, prod.id)
+        prod.avg_price_30d = avg30
+        prod.min_price_90d = best90
         prod.trend_30d = trend
 
-        abs_sav = (stats30["avg"] - (n.price_final or 0)) if stats30["avg"] and n.price_final else None
-        disc = discount_pct(n.price_old or stats30["avg"], n.price_final)
-        fake_msrp = is_fake_msrp(n.price_old, stats30["avg"], stats90["min"])
+        abs_sav = (avg30 - (n.price_final or 0)) if avg30 and n.price_final else None
+        disc = discount_pct(n.price_old or avg30, n.price_final)
+        fake_msrp = is_fake_msrp(n.price_old, avg30)
         score = compute_score(disc, abs_sav, None, n.shipping_days, score_weights)
 
         off.discount_pct = disc
