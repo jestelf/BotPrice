@@ -2,6 +2,7 @@ import asyncio
 import json
 import random
 from datetime import datetime, timedelta
+from hashlib import sha256
 from typing import Dict, Any, Optional
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -211,6 +212,7 @@ class RenderService:
                             try:
                                 meta = {
                                     "html": html,
+                                    "html_hash": sha256(html.encode("utf-8")).hexdigest(),
                                     "etag": resp.headers.get("etag") if resp else None,
                                     "last_modified": resp.headers.get("last-modified") if resp else None,
                                 }
