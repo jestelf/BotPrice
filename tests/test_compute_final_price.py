@@ -27,3 +27,18 @@ def test_compute_final_price_price_in_cart():
     total = compute_final_price(1000, price_in_cart=True)
     assert total is None
 
+
+def test_compute_final_price_return_raw(monkeypatch):
+    monkeypatch.setattr(settings, "SHIPPING_COST", 300)
+    final, raw = compute_final_price(
+        2000, {"instant_coupon": 500}, shipping_days=2, with_raw=True
+    )
+    assert final == 2000 - 500 + 300
+    assert raw == 2000
+
+
+def test_compute_final_price_shipping_included(monkeypatch):
+    monkeypatch.setattr(settings, "SHIPPING_COST", 250)
+    total = compute_final_price(1000, shipping_days=3, shipping_included=True)
+    assert total == 1000
+

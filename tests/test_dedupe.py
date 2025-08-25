@@ -26,6 +26,7 @@ def make_offer(num: int, finger: str, img_hash: str, price: int) -> OfferNormali
         price_final=price,
         discount_pct=None,
         shipping_days=None,
+        shipping_included=False,
         promo_flags={},
         price_in_cart=False,
         subscription=False,

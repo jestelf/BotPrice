@@ -2,6 +2,7 @@ from collections import defaultdict
 from typing import Iterable
 
 from prometheus_client import Counter, Gauge, Histogram
+from statistics import median, quantiles
 
 from .notifier.monitoring import notify_monitoring
 from .schemas import OfferNormalized
@@ -34,6 +35,12 @@ category_avg_price = Gauge(
 category_no_price_share = Gauge(
     "category_no_price_share", "Share of items without price", ["category"]
 )
+category_price_p50 = Gauge(
+    "category_price_p50", "Median price per category", ["category"]
+)
+category_price_p90 = Gauge(
+    "category_price_p90", "P90 price per category", ["category"]
+)
 _category_counts = defaultdict(int)
 _category_avg = defaultdict(float)
 
@@ -54,7 +61,7 @@ def update_category_price_stats(items: Iterable[OfferNormalized]) -> None:
     отправляет уведомление в канал мониторинга.
     """
     stats: dict[str, dict[str, float]] = defaultdict(
-        lambda: {"total": 0, "sum": 0.0, "with_price": 0}
+        lambda: {"total": 0, "sum": 0.0, "with_price": 0, "prices": []}
     )
     for it in items:
         cat = it.category or "unknown"
@@ -63,6 +70,7 @@ def update_category_price_stats(items: Iterable[OfferNormalized]) -> None:
         if it.price is not None:
             s["sum"] += it.price
             s["with_price"] += 1
+            s["prices"].append(it.price)
 
     for cat, s in stats.items():
         total = s["total"]
@@ -71,6 +79,14 @@ def update_category_price_stats(items: Iterable[OfferNormalized]) -> None:
         category_avg_price.labels(category=cat).set(avg)
         no_price_share = (total - with_price) / total if total else 0
         category_no_price_share.labels(category=cat).set(no_price_share)
+
+        if s["prices"]:
+            category_price_p50.labels(category=cat).set(median(s["prices"]))
+            try:
+                p90 = quantiles(s["prices"], n=100)[89]
+            except Exception:
+                p90 = s["prices"][0]
+            category_price_p90.labels(category=cat).set(p90)
 
         prev = _category_counts[cat]
         if prev and (total < prev * 0.5 or total > prev * 2):

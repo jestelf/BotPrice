@@ -2,12 +2,14 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 from sqlalchemy import select
+from cron_descriptor import get_description
 
 from .db import SessionLocal
 from .models import User
 from .policy import check_text, PolicyError
 
 DEFAULT_CRON = "0 9,19 * * *"
+DEFAULT_CRON_HUMAN = get_description(DEFAULT_CRON, locale="ru")
 
 router = Router()
 
@@ -72,6 +74,7 @@ async def cmd_pause(message: Message):
     async with SessionLocal() as session:
         user = await _get_or_create_user(session, message.chat.id)
         user.schedule_cron = None
+        user.schedule_human = None
         await session.commit()
     await message.answer("Рассылка приостановлена")
 
@@ -85,5 +88,6 @@ async def cmd_resume(message: Message):
     async with SessionLocal() as session:
         user = await _get_or_create_user(session, message.chat.id)
         user.schedule_cron = DEFAULT_CRON
+        user.schedule_human = DEFAULT_CRON_HUMAN
         await session.commit()
-    await message.answer("Рассылка возобновлена")
+    await message.answer(f"Рассылка возобновлена: {DEFAULT_CRON_HUMAN}")

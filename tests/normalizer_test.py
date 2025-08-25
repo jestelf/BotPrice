@@ -24,6 +24,7 @@ def test_offer_raw_to_normalized():
         price_old="20 000 ₽",
         shipping_days=2,
         promo_flags={"instant_coupon": 1000},
+        shipping_included=False,
         price_in_cart=False,
         subscription=False,
         geoid="213",

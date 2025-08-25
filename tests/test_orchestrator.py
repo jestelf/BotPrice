@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
 
 from app.models import Base, User
 from app.queue import AbstractQueue
+from pydantic import BaseModel
 import app.orchestrator as orchestrator
 from app.orchestrator import Orchestrator
 from app import metrics
@@ -23,8 +24,11 @@ from app import metrics
 class DummyQueue(AbstractQueue):
     def __init__(self):
         self.tasks = []
-    async def publish(self, data: dict, dlq: bool = False) -> None:
-        self.tasks.append(data)
+    async def publish(self, data, dlq: bool = False) -> None:
+        if isinstance(data, BaseModel):
+            self.tasks.append(data.model_dump())
+        else:
+            self.tasks.append(data)
 
 
 @pytest.mark.asyncio

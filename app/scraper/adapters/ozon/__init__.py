@@ -140,6 +140,7 @@ def parse_listing(html: str) -> list[OfferRaw]:
             except Exception:
                 pass
 
+        shipping_included = "бесп" in text_block
         price_in_cart = "корзин" in text_block
         subscription = "подпис" in text_block
 
@@ -151,6 +152,7 @@ def parse_listing(html: str) -> list[OfferRaw]:
             price=price,
             shipping_days=shipping_days,
             promo_flags=promo_flags,
+            shipping_included=shipping_included,
             price_in_cart=price_in_cart,
             subscription=subscription,
             geoid=None
@@ -203,6 +205,7 @@ def parse_product(html: str) -> OfferRaw:
         except Exception:
             pass
 
+    shipping_included = "бесп" in text_block
     price_in_cart = "корзин" in text_block
     subscription = "подпис" in text_block
 
@@ -214,6 +217,7 @@ def parse_product(html: str) -> OfferRaw:
         price=price,
         shipping_days=shipping_days,
         promo_flags=promo_flags,
+        shipping_included=shipping_included,
         price_in_cart=price_in_cart,
         subscription=subscription,
         geoid=None,
@@ -227,6 +231,7 @@ def compute_final_price(offer: OfferRaw):
         offer.price,
         offer.promo_flags,
         offer.shipping_days,
+        offer.shipping_included,
         offer.subscription,
         offer.price_in_cart,
     )

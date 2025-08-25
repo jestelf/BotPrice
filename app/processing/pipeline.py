@@ -75,6 +75,34 @@ async def fetch_site_list(
     else:
         return []
 
+
+async def fetch_product_detail(
+    render: RenderService, site: str, url: str, geoid: str | None
+) -> OfferRaw | None:
+    geoid_actual = geoid or settings.DEFAULT_GEOID
+    domain = urlparse(url).netloc
+    if site == "ozon":
+        cookies = ozon_ad.region_cookies(geoid_actual)
+        html, screenshot = await render.fetch(url=url, cookies=cookies, region_hint=geoid)
+        try:
+            return ozon_ad.parse_product(html)
+        except Exception as e:
+            parse_errors.labels(domain=domain).inc()
+            await render.save_snapshot(url, html, screenshot, prefix="product")
+            sentry_sdk.capture_exception(e)
+            return None
+    elif site == "market":
+        cookies = market_ad.region_cookies(geoid_actual)
+        html, screenshot = await render.fetch(url=url, cookies=cookies, region_hint=geoid)
+        try:
+            return market_ad.parse_product(html, geoid=geoid)
+        except Exception as e:
+            parse_errors.labels(domain=domain).inc()
+            await render.save_snapshot(url, html, screenshot, prefix="product")
+            sentry_sdk.capture_exception(e)
+            return None
+    return None
+
 async def upsert_offer(session: AsyncSession, item: OfferNormalized):
     # Product
     q = select(Product).where(Product.url == item.url)
@@ -140,6 +168,11 @@ async def process_preset(
     raws = await fetch_site_list(render, site, url, geoid)
     normalized = [normalize(r) for r in raws]
     normalized = dedupe_offers(normalized)
+    for idx, n in enumerate(normalized):
+        if n.price_in_cart and n.price_final is None:
+            detail = await fetch_product_detail(render, site, n.url, geoid)
+            if detail:
+                normalized[idx] = normalize(detail)
     update_category_price_stats(normalized)
 
     results: list[dict] = []
@@ -171,6 +204,7 @@ async def process_preset(
                 "title": n.title,
                 "url": n.url,
                 "price": n.price_final or n.price or 0,
+                "price_raw": n.price,
                 "discount_pct": disc,
                 "score": score,
                 "source": n.source,
