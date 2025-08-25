@@ -1,5 +1,18 @@
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String, Integer, Float, ForeignKey, DateTime, JSON, UniqueConstraint, Index, Text, Boolean
+from sqlalchemy import (
+    String,
+    Integer,
+    Float,
+    ForeignKey,
+    DateTime,
+    JSON,
+    UniqueConstraint,
+    Index,
+    Text,
+    Boolean,
+    event,
+    DDL,
+)
 from datetime import datetime
 from .db import Base
 from .crypto import EncryptedStr, EncryptedInt, EncryptedJSON
@@ -63,6 +76,16 @@ class PriceHistory(Base):
     seller: Mapped[str | None] = mapped_column(String(128))
 
     product: Mapped["Product"] = relationship(back_populates="history")
+
+
+# Создание hypertable для TimescaleDB
+event.listen(
+    PriceHistory.__table__,
+    "after_create",
+    DDL(
+        "SELECT create_hypertable('price_history', 'ts', if_not_exists => TRUE)"
+    ).execute_if(dialect="postgresql"),
+)
 
 class Event(Base):
     __tablename__ = "events"
