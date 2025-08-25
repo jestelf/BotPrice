@@ -1,6 +1,9 @@
+import json
+import os
+import re
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
-import re
+
 from ....schemas import OfferRaw
 from ....pricing import compute_final_price as compute_final_price_common
 from .. import get_selectors, select_one, select_all
@@ -10,6 +13,12 @@ GEOID_TO_CITY = {
     "213": "Москва",
     "2": "Санкт-Петербург",
 }
+_extra = os.getenv("OZON_GEOID_TO_CITY")
+if _extra:
+    try:
+        GEOID_TO_CITY.update(json.loads(_extra))
+    except Exception:
+        logger.warning("Не удалось разобрать OZON_GEOID_TO_CITY")
 
 BASE = "https://www.ozon.ru"
 
@@ -32,7 +41,12 @@ def city_from_html(html: str) -> str | None:
     el = soup.select_one("[data-widget='headerLocation']") or soup.select_one(
         "[data-widget='regionSelect']"
     )
-    return el.get_text(strip=True) if el else None
+    if el:
+        return el.get_text(strip=True)
+    m = re.search(r"Товары для города\s+([\w\-\s]+)", html)
+    if m:
+        return m.group(1).strip()
+    return None
 
 
 def ensure_region(html: str, geoid: str) -> bool:
