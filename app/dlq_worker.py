@@ -5,7 +5,7 @@ from prometheus_client import start_http_server
 
 from .queue import RedisQueue
 from .config import settings
-from .logging_config import setup_logging
+from observability.logging import setup_logging
 
 
 logger = logging.getLogger(__name__)

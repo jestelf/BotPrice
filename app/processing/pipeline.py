@@ -1,9 +1,11 @@
 from typing import Iterable
+import time
+from urllib.parse import urlparse
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from history.service import update_product_metrics
-from urllib.parse import urlparse
 
 import sentry_sdk
 
@@ -16,11 +18,8 @@ from ..processing.detectors import is_fake_msrp
 from ..processing.dedupe import dedupe_offers
 from ..models import Product, Offer, PriceHistory
 from ..config import settings
-from ..metrics import (
-    update_listing_stats,
-    update_category_price_stats,
-    render_errors,
-)
+from ..metrics import update_listing_stats, update_category_price_stats
+from observability.metrics import parse_latency, parse_errors
 
 async def fetch_site_list(
     render: RenderService, site: str, url: str, geoid: str | None
@@ -37,11 +36,13 @@ async def fetch_site_list(
         )
         if not ozon_ad.ensure_region(html, geoid_actual):
             raise ValueError("Не удалось выбрать регион")
+        start = time.perf_counter()
         try:
             items = ozon_ad.parse_listing(html)
+            parse_latency.labels(domain=domain).observe(time.perf_counter() - start)
         except Exception as e:
+            parse_errors.labels(domain=domain).inc()
             await render.save_snapshot(url, html, screenshot, prefix="schema")
-            render_errors.labels(domain=domain).inc()
             sentry_sdk.capture_exception(e)
             raise
         if not items:
@@ -58,11 +59,13 @@ async def fetch_site_list(
         )
         if not market_ad.ensure_region(html, geoid_actual):
             raise ValueError("Не удалось выбрать регион")
+        start = time.perf_counter()
         try:
             items = market_ad.parse_listing(html, geoid=geoid)
+            parse_latency.labels(domain=domain).observe(time.perf_counter() - start)
         except Exception as e:
+            parse_errors.labels(domain=domain).inc()
             await render.save_snapshot(url, html, screenshot, prefix="schema")
-            render_errors.labels(domain=domain).inc()
             sentry_sdk.capture_exception(e)
             raise
         if not items:

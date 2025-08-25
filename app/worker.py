@@ -8,9 +8,7 @@ from .db import SessionLocal
 from .config import settings
 from .notifier.bot import send_batch
 from .models import User
-from .logging_config import setup_logging
-
-import sentry_sdk
+from observability.logging import setup_logging
 from prometheus_client import start_http_server
 
 
@@ -62,8 +60,6 @@ class Worker:
 
 async def main():
     setup_logging()
-    if settings.SENTRY_DSN:
-        sentry_sdk.init(settings.SENTRY_DSN)
     if settings.METRICS_PORT:
         start_http_server(settings.METRICS_PORT)
     queue = RedisQueue(settings.REDIS_URL, settings.QUEUE_STREAM)

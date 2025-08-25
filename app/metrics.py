@@ -7,12 +7,6 @@ from .notifier.monitoring import notify_monitoring
 from .schemas import OfferNormalized
 
 
-render_latency = Histogram(
-    "render_latency_seconds", "Latency of page rendering", ["domain"]
-)
-render_errors = Counter(
-    "render_errors_total", "Total render errors", ["domain"]
-)
 dlq_tasks_total = Counter(
     "dlq_tasks_total", "Total tasks processed from DLQ"
 )
@@ -41,6 +35,7 @@ category_no_price_share = Gauge(
     "category_no_price_share", "Share of items without price", ["category"]
 )
 _category_counts = defaultdict(int)
+_category_avg = defaultdict(float)
 
 
 def update_listing_stats(domain: str, empty: bool) -> None:
@@ -83,3 +78,10 @@ def update_category_price_stats(items: Iterable[OfferNormalized]) -> None:
                 f"Аномальное изменение количества карточек в категории {cat}: {prev} → {total}"
             )
         _category_counts[cat] = total
+
+        prev_avg = _category_avg[cat]
+        if prev_avg and (avg < prev_avg * 0.5 or avg > prev_avg * 2):
+            notify_monitoring(
+                f"Аномальное изменение средней цены в категории {cat}: {prev_avg:.2f} → {avg:.2f}"
+            )
+        _category_avg[cat] = avg

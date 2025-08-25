@@ -15,7 +15,7 @@ import redis.asyncio as redis
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
 from ..config import settings
-from ..metrics import render_latency, render_errors
+from observability.metrics import render_latency, render_errors
 
 logger = logging.getLogger(__name__)
 
