@@ -44,6 +44,8 @@ def test_category_metrics_and_trigger(monkeypatch):
     assert metrics.category_avg_price.labels(category="cat")._value.get() == 200
     assert metrics.category_no_price_share.labels(category="cat")._value.get() == 0.25
 
-    items2 = [make_item(150)]
+    items2 = [make_item(1000)]
     metrics.update_category_price_stats(items2)
-    assert messages, "должно сработать уведомление о падении выборки"
+    assert len(messages) == 2
+    assert any("количества" in m for m in messages)
+    assert any("средней цены" in m for m in messages)

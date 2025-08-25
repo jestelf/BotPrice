@@ -3,14 +3,10 @@ from .db import init_db
 from .orchestrator import Orchestrator
 from .config import settings
 from .queue import RedisQueue
-from .logging_config import setup_logging
-
-import sentry_sdk
+from observability.logging import setup_logging
 
 async def main():
     setup_logging()
-    if settings.SENTRY_DSN:
-        sentry_sdk.init(settings.SENTRY_DSN)
     await init_db()
     queue = RedisQueue(settings.REDIS_URL, settings.QUEUE_STREAM)
     orch = Orchestrator(queue)

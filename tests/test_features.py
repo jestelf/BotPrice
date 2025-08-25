@@ -48,6 +48,14 @@ def load_pipeline(monkeypatch):
             render_errors=types.SimpleNamespace(labels=lambda **kw: types.SimpleNamespace(inc=lambda: None)),
         ),
     )
+    monkeypatch.setitem(
+        sys.modules,
+        "observability.metrics",
+        types.SimpleNamespace(
+            parse_latency=types.SimpleNamespace(labels=lambda **kw: types.SimpleNamespace(observe=lambda v: None)),
+            parse_errors=types.SimpleNamespace(labels=lambda **kw: types.SimpleNamespace(inc=lambda: None)),
+        ),
+    )
 
     pipeline = importlib.import_module("app.processing.pipeline")
     return pipeline.compute_features, pipeline.upsert_offer
