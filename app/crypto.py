@@ -1,23 +1,37 @@
 import base64
 import json
+import os
+from typing import List
+
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from sqlalchemy.types import TypeDecorator, String, Text
 
 from .config import settings
 
-_key = base64.urlsafe_b64decode(settings.DATA_ENCRYPTION_KEY)
-_aes = AESGCM(_key)
-_NONCE = b"\x00" * 12
+_keys: List[bytes] = [
+    base64.urlsafe_b64decode(k) for k in settings.DATA_ENCRYPTION_KEY.split(",")
+]
+_encryptor = AESGCM(_keys[0])
+_decryptors = [AESGCM(k) for k in _keys]
+
 
 def encrypt_text(value: str) -> str:
+    nonce = os.urandom(12)
     data = value.encode("utf-8")
-    enc = _aes.encrypt(_NONCE, data, None)
-    return base64.urlsafe_b64encode(enc).decode("utf-8")
+    enc = _encryptor.encrypt(nonce, data, None)
+    return base64.urlsafe_b64encode(nonce + enc).decode("utf-8")
+
 
 def decrypt_text(token: str) -> str:
-    data = base64.urlsafe_b64decode(token)
-    dec = _aes.decrypt(_NONCE, data, None)
-    return dec.decode("utf-8")
+    raw = base64.urlsafe_b64decode(token)
+    nonce, data = raw[:12], raw[12:]
+    for aes in _decryptors:
+        try:
+            dec = aes.decrypt(nonce, data, None)
+            return dec.decode("utf-8")
+        except Exception:
+            continue
+    raise ValueError("Не удалось расшифровать данные")
 
 class EncryptedStr(TypeDecorator):
     impl = String
