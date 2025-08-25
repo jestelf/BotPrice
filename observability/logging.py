@@ -1,16 +1,30 @@
 import logging
 import os
 import json
+import re
 
 import sentry_sdk
 
 
+_PII_PATTERNS = [
+    re.compile(r"[^\s]+@[^\s]+"),
+    re.compile(r"token[^\s]*", re.I),
+    re.compile(r"chat_id[^\s]*", re.I),
+    re.compile(r"\b\d{6,}\b"),
+]
+
+
+def _redact(text: str) -> str:
+    for pat in _PII_PATTERNS:
+        text = pat.sub("<pii>", text)
+    return text
+
+
 class PiiFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:  # pragma: no cover - trivial
-        if record.args:
-            record.args = tuple(
-                "<pii>" if isinstance(a, str) and "@" in a else a for a in record.args
-            )
+        msg = record.getMessage()
+        record.msg = _redact(msg)
+        record.args = ()
         return True
 
 

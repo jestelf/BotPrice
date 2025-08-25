@@ -62,8 +62,12 @@ def load_presets(path: str) -> Presets:
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(f"Presets file not found: {path}")
-    with p.open('r', encoding='utf-8') as f:
-        data = yaml.safe_load(f)
+    text = p.read_text(encoding="utf-8")
+    if p.suffix == ".enc":
+        from .crypto import decrypt_text
+
+        text = decrypt_text(text.strip())
+    data = yaml.safe_load(text)
     return Presets(**data)
 
 settings = Settings()  # load at import time
