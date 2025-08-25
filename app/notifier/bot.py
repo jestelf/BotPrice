@@ -28,12 +28,13 @@ async def send_batch(bot_token: str, chat_id: int, items: list[dict], chunk_size
         remaining = settings.DAILY_MSG_LIMIT - current
 
         to_send: list[dict] = []
+        prod_key = f"cooldown:product:{chat_id}"
         for it in items:
             pid = hashlib.md5(it["url"].encode()).hexdigest()
-            if await r.sismember("seen:product", pid):
+            if await r.sismember(prod_key, pid):
                 continue
-            await r.sadd("seen:product", pid)
-            await r.expire("seen:product", 48 * 3600)
+            await r.sadd(prod_key, pid)
+            await r.expire(prod_key, 48 * 3600)
             to_send.append(it)
             if len(to_send) >= remaining:
                 break
@@ -60,7 +61,11 @@ async def send_batch(bot_token: str, chat_id: int, items: list[dict], chunk_size
                 text_lines.append(line)
             kb = InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [InlineKeyboardButton(text="★ В избранное", callback_data=f"fav:{k}")]
+                    [
+                        InlineKeyboardButton(text="★", callback_data=f"fav:{k}"),
+                        InlineKeyboardButton(text="Скрыть", callback_data=f"hide:{k}"),
+                        InlineKeyboardButton(text="Ещё −10%", callback_data=f"more:{k}"),
+                    ]
                     for k in range(len(chunk))
                 ]
             )
