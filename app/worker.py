@@ -1,4 +1,5 @@
 import asyncio
+import os
 from sqlalchemy import select
 
 from .queue import RedisQueue, PermanentError
@@ -13,13 +14,15 @@ from prometheus_client import start_http_server
 
 
 class Worker:
-    def __init__(self, queue: RedisQueue):
+    def __init__(self, queue: RedisQueue, shard: tuple[str | None, str | None, str | None] | None = None):
         self.queue = queue
         self.render = RenderService()
+        self.shard = shard
 
     async def start(self):
         await self.render.start()
-        await self.queue.consume(self.handle_task)
+        site, geoid, category = self.shard if self.shard else (None, None, None)
+        await self.queue.consume(self.handle_task, site=site, geoid=geoid, category=category)
 
     async def handle_task(self, task: dict):
         site = task.get("site")
@@ -63,7 +66,14 @@ async def main():
     if settings.METRICS_PORT:
         start_http_server(settings.METRICS_PORT)
     queue = RedisQueue(settings.REDIS_URL, settings.QUEUE_STREAM)
-    worker = Worker(queue)
+    shard = (
+        os.getenv("WORKER_SITE"),
+        os.getenv("WORKER_GEOID"),
+        os.getenv("WORKER_CATEGORY"),
+    )
+    if all(v is None for v in shard):
+        shard = None
+    worker = Worker(queue, shard=shard)
     await worker.start()
 
 

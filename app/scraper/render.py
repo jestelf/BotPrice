@@ -46,6 +46,7 @@ class RenderService:
         else:
             self._s3 = None
         self._snapshot_ttl = getattr(settings, "SNAPSHOT_TTL_DAYS", 7)
+        self._error_times: dict[str, list[float]] = {}
 
     async def start(self):
         if self._browser:
@@ -71,6 +72,17 @@ class RenderService:
             self._pw = None
         if self._redis:
             await self._redis.close()
+
+    async def _throttle(self, domain: str) -> None:
+        now = time.time()
+        times = [t for t in self._error_times.get(domain, []) if now - t < 60]
+        self._error_times[domain] = times
+        extra = max(0, len(times) - 3)
+        if extra:
+            await asyncio.sleep(extra)
+
+    def _record_error(self, domain: str) -> None:
+        self._error_times.setdefault(domain, []).append(time.time())
 
     async def _reset_context(self, ctx: BrowserContext) -> None:
         try:
@@ -153,6 +165,7 @@ class RenderService:
 
         start = time.perf_counter()
         try:
+            await self._throttle(domain)
             async with sem:
                 ctx = await self._ctx_pool.get()
                 try:
@@ -224,6 +237,7 @@ class RenderService:
                     await self._ctx_pool.put(ctx)
         except Exception as e:
             render_errors.labels(domain=domain).inc()
+            self._record_error(domain)
             sentry_sdk.capture_exception(e)
             raise
         finally:
