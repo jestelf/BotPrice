@@ -35,6 +35,7 @@ def normalize(raw: OfferRaw) -> OfferNormalized:
         raw.price,
         raw.promo_flags,
         raw.shipping_days,
+        raw.shipping_included,
         raw.subscription,
         raw.price_in_cart,
     )
@@ -55,6 +56,7 @@ def normalize(raw: OfferRaw) -> OfferNormalized:
         price_final=price_final,
         discount_pct=None,  # посчитаем позже с историей
         shipping_days=raw.shipping_days,
+        shipping_included=raw.shipping_included,
         promo_flags=raw.promo_flags,
         price_in_cart=raw.price_in_cart,
         subscription=raw.subscription,

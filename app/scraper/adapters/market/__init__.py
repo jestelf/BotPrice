@@ -119,6 +119,7 @@ def parse_listing(html: str, geoid: str | None = None) -> list[OfferRaw]:
             except Exception:
                 pass
 
+        shipping_included = "бесп" in text_block
         price_in_cart = "корзин" in text_block
         subscription = "подпис" in text_block
 
@@ -129,6 +130,7 @@ def parse_listing(html: str, geoid: str | None = None) -> list[OfferRaw]:
             img=img,
             price=price_value,
             shipping_days=shipping_days,
+            shipping_included=shipping_included,
             promo_flags=promo_flags,
             price_in_cart=price_in_cart,
             subscription=subscription,
@@ -182,6 +184,7 @@ def parse_product(html: str, geoid: str | None = None) -> OfferRaw:
         except Exception:
             pass
 
+    shipping_included = "бесп" in text_block
     price_in_cart = "корзин" in text_block
     subscription = "подпис" in text_block
 
@@ -192,6 +195,7 @@ def parse_product(html: str, geoid: str | None = None) -> OfferRaw:
         img=img,
         price=price,
         shipping_days=shipping_days,
+        shipping_included=shipping_included,
         promo_flags=promo_flags,
         price_in_cart=price_in_cart,
         subscription=subscription,
@@ -206,6 +210,7 @@ def compute_final_price(offer: OfferRaw):
         offer.price,
         offer.promo_flags,
         offer.shipping_days,
+        offer.shipping_included,
         offer.subscription,
         offer.price_in_cart,
     )

@@ -105,6 +105,7 @@ class User(Base):
     filters_json: Mapped[dict | None] = mapped_column(EncryptedJSON, nullable=True)
     score_weights_json: Mapped[dict | None] = mapped_column(EncryptedJSON, nullable=True)
     schedule_cron: Mapped[str | None] = mapped_column(EncryptedStr)  # e.g., "0 9,19 * * *"
+    schedule_human: Mapped[str | None] = mapped_column(EncryptedStr, nullable=True)
 
 class Favorite(Base):
     __tablename__ = "favorites"

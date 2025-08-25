@@ -35,6 +35,8 @@ class Settings(BaseSettings):
 
     PRESETS_FILE: str = "./presets.yaml"
 
+    TIMEZONE: str = "Europe/Moscow"
+
     REDIS_URL: str = "redis://localhost:6379/0"
     QUEUE_STREAM: str = "presets"
 

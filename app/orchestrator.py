@@ -1,13 +1,15 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from zoneinfo import ZoneInfo
 from sqlalchemy import select
 
 from .config import settings, presets
 from .queue import AbstractQueue
+from .schemas import TaskPayload
 from .db import SessionLocal
 from .models import User
 from . import metrics
@@ -24,7 +26,8 @@ class Orchestrator:
         quiet_hours: tuple[int, int] | str | None = None,
     ):
         self.queue = queue
-        self.scheduler = AsyncIOScheduler()
+        self.tz = ZoneInfo(settings.TIMEZONE)
+        self.scheduler = AsyncIOScheduler(timezone=self.tz)
         self.running = False
         self.max_pages = max_pages if max_pages is not None else settings.BUDGET_MAX_PAGES
         self.max_tasks = max_tasks if max_tasks is not None else settings.BUDGET_MAX_TASKS
@@ -99,7 +102,7 @@ class Orchestrator:
         self.pages_sent = 0
         self.tasks_sent = 0
 
-        now = datetime.utcnow()
+        now = datetime.now(self.tz)
         async with SessionLocal() as session:
             res = await session.execute(
                 select(User.geoid, User.filters_json, User.schedule_cron)
@@ -114,8 +117,9 @@ class Orchestrator:
         for geoid, filters_json, cron in rows:
             if cron:
                 try:
-                    trig = CronTrigger.from_crontab(cron)
-                    if not trig.match(now):
+                    trig = CronTrigger.from_crontab(cron, timezone=self.tz)
+                    next_time = trig.get_next_fire_time(now - timedelta(minutes=1), now)
+                    if next_time != now:
                         logger.info(
                             "Пропуск геоида %s из-за расписания %s", geoid, cron
                         )
@@ -135,7 +139,8 @@ class Orchestrator:
 
         default_geoid = presets.geoid_default or settings.DEFAULT_GEOID
         for cat in all_categories:
-            pairs.add((cat, default_geoid))
+            if (cat, default_geoid) not in pairs:
+                pairs.add((cat, default_geoid))
 
         min_discount = settings.MIN_DISCOUNT
         min_score = settings.MIN_SCORE
@@ -146,16 +151,16 @@ class Orchestrator:
                     item_cat = item["name"].split(":")[0]
                     if item_cat != category:
                         continue
-                    task = {
-                        "site": site,
-                        "url": item["url"],
-                        "geoid": geoid,
-                        "category": category,
-                        "min_discount": min_discount,
-                        "min_score": min_score,
-                        "notify": notify,
-                    }
-                    if not self._allow_publish(task):
+                    task = TaskPayload(
+                        site=site,
+                        url=item["url"],
+                        geoid=geoid,
+                        category=category,
+                        min_discount=min_discount,
+                        min_score=min_score,
+                        notify=notify,
+                    )
+                    if not self._allow_publish(task.model_dump()):
                         continue
                     await self.queue.publish(task)
                     await asyncio.sleep(1.0)

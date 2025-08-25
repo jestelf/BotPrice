@@ -3,6 +3,7 @@ import os
 from sqlalchemy import select
 
 from .queue import RedisQueue, PermanentError
+from .schemas import TaskPayload
 from .processing.pipeline import process_preset
 from .scraper.render import RenderService
 from .db import SessionLocal
@@ -24,17 +25,17 @@ class Worker:
         site, geoid, category = self.shard if self.shard else (None, None, None)
         await self.queue.consume(self.handle_task, site=site, geoid=geoid, category=category)
 
-    async def handle_task(self, task: dict):
-        site = task.get("site")
+    async def handle_task(self, task: TaskPayload):
+        site = task.site
         if site not in {"ozon", "market"}:
             raise PermanentError(f"Unknown site {site}")
         async with SessionLocal() as session:
-            min_discount = int(task.get("min_discount", settings.MIN_DISCOUNT))
-            min_score = int(task.get("min_score", settings.MIN_SCORE))
-            weights = task.get("weights")
-            geoid = task.get("geoid") or None
+            min_discount = task.min_discount or settings.MIN_DISCOUNT
+            min_score = task.min_score or settings.MIN_SCORE
+            weights = task.weights
+            geoid = task.geoid or None
 
-            chat_id = task.get("chat_id")
+            chat_id = task.chat_id
             if chat_id:
                 res = await session.execute(select(User).where(User.chat_id == int(chat_id)))
                 user = res.scalar_one_or_none()
@@ -49,13 +50,13 @@ class Worker:
                 session,
                 self.render,
                 site,
-                task.get("url", ""),
+                task.url,
                 geoid,
                 min_discount,
                 min_score,
                 weights,
             )
-        notify = task.get("notify") in {"True", True}
+        notify = task.notify
         if notify and settings.TG_CHAT_ID and results:
             best = sorted(results, key=lambda x: x["score"], reverse=True)[:20]
             await send_batch(settings.TELEGRAM_BOT_TOKEN, settings.TG_CHAT_ID, best)

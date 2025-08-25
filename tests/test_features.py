@@ -115,6 +115,7 @@ async def test_upsert_adds_price_history(monkeypatch):
             price_final=150,
             discount_pct=None,
             shipping_days=None,
+            shipping_included=False,
             promo_flags={},
             price_in_cart=False,
             subscription=False,

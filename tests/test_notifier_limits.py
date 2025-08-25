@@ -133,5 +133,5 @@ async def test_daily_limit(monkeypatch):
         await bot_mod.send_batch("token", 5, [it], chunk_size=1)
 
     assert len(sent) == 2  # третий не ушёл
-    assert await r.sismember("cooldown:user", 5)
+    assert await r.exists("cooldown:user:5")
 

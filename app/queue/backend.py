@@ -1,6 +1,9 @@
 import asyncio
 import random
 from typing import Callable, Awaitable, Any
+import json
+from pydantic import BaseModel
+from ..schemas import TaskPayload
 
 import redis.asyncio as redis
 from redis.exceptions import ResponseError
@@ -12,10 +15,10 @@ class PermanentError(Exception):
 
 
 class AbstractQueue:
-    async def publish(self, data: dict, dlq: bool = False) -> None:
+    async def publish(self, data: dict | BaseModel, dlq: bool = False) -> None:
         raise NotImplementedError
 
-    async def consume(self, handler: Callable[[dict], Awaitable[Any]], consumer_name: str) -> None:
+    async def consume(self, handler: Callable[[Any], Awaitable[Any]], consumer_name: str) -> None:
         raise NotImplementedError
 
 
@@ -42,17 +45,25 @@ class RedisQueue(AbstractQueue):
             if "BUSYGROUP" not in str(e):
                 raise
 
-    async def publish(self, data: dict, dlq: bool = False) -> None:
-        site = data.get("site")
-        geoid = data.get("geoid")
-        category = data.get("category")
+    async def publish(self, data: dict | BaseModel, dlq: bool = False) -> None:
+        retries = None
+        if isinstance(data, BaseModel):
+            model = TaskPayload.model_validate(data.model_dump())
+        else:
+            retries = data.get("retries")
+            model = TaskPayload.model_validate(data)
+        data_dict = model.model_dump()
+
+        site = data_dict.get("site")
+        geoid = data_dict.get("geoid")
+        category = data_dict.get("category")
         base_stream = self._shard_stream(site, geoid, category)
         stream = f"{base_stream}:dlq" if dlq else base_stream
         group = f"{stream}:group"
         await self._ensure_group(stream, group)
 
-        url_template = data.get("url_template") or data.get("url")
-        page = data.get("page")
+        url_template = data_dict.get("url_template") or data_dict.get("url")
+        page = data_dict.get("page")
         idem_key = f"{site}:{geoid}:{category}:{url_template}:{page}"
         idem_redis_key = f"{stream}:idem:{idem_key}"
         added = await self.redis.setnx(idem_redis_key, 1)
@@ -60,8 +71,12 @@ class RedisQueue(AbstractQueue):
             return
         await self.redis.expire(idem_redis_key, self.idempotency_ttl)
 
-        payload = {k: str(v) for k, v in data.items()}
-        payload["idempotency_key"] = idem_key
+        payload = {
+            "data": json.dumps(data_dict, ensure_ascii=False),
+            "idempotency_key": idem_key,
+        }
+        if retries is not None:
+            payload["retries"] = str(retries)
         await self.redis.xadd(stream, payload)
 
     async def consume(
@@ -86,20 +101,21 @@ class RedisQueue(AbstractQueue):
                 for msg_id, message in messages:
                     data = {k.decode(): v.decode() for k, v in message.items()}
                     retries = int(data.pop("retries", "0"))
+                    task = TaskPayload.model_validate_json(data.get("data", "{}"))
                     try:
-                        await handler(data)
+                        await handler(task)
                     except PermanentError:
-                        await self.publish({**data, "retries": retries}, dlq=True)
+                        await self.publish({**task.model_dump(), "retries": retries}, dlq=True)
                     except Exception as e:
                         status = getattr(e, "status", getattr(e, "status_code", None))
                         if status and 400 <= int(status) < 600:
                             await self.publish({**data, "retries": retries}, dlq=True)
                         elif retries + 1 >= max_retries:
-                            await self.publish({**data, "retries": retries + 1}, dlq=True)
+                            await self.publish({**task.model_dump(), "retries": retries + 1}, dlq=True)
                         else:
                             backoff = (2 ** retries) + random.random()
                             await asyncio.sleep(backoff)
-                            await self.publish({**data, "retries": retries + 1})
+                            await self.publish({**task.model_dump(), "retries": retries + 1})
                     finally:
                         await self.redis.xack(stream, group, msg_id)
                         await self.redis.xdel(stream, msg_id)
@@ -136,8 +152,9 @@ class RedisQueue(AbstractQueue):
             for _stream, messages in res:
                 for msg_id, message in messages:
                     data = {k.decode(): v.decode() for k, v in message.items()}
+                    task = TaskPayload.model_validate_json(data.get("data", "{}"))
                     try:
-                        await handler(data)
+                        await handler(task)
                     finally:
                         dlq_tasks_total.inc()
                         await self.redis.xack(dlq_stream, dlq_group, msg_id)
