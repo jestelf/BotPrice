@@ -9,6 +9,14 @@ ozon:
       css: 'a[href*="/product/"]'
       xpath: "//a[contains(@href,'/product/')]"
       json: null
+    price:
+      css: 'div'
+      xpath: '//div'
+      json: 'price.current'
+    image:
+      css: 'img'
+      xpath: '//img'
+      json: 'image.url'
   product:
     title:
       css: 'h1'

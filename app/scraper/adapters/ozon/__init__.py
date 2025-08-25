@@ -1,26 +1,26 @@
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 import re
-from ...schemas import OfferRaw
-from ...pricing import compute_final_price as compute_final_price_common
-from . import get_selectors, select_one, select_all
-from .. import logger
+from ....schemas import OfferRaw
+from ....pricing import compute_final_price as compute_final_price_common
+from .. import get_selectors, select_one, select_all
+from ... import logger
 
 GEOID_TO_CITY = {
     "213": "Москва",
     "2": "Санкт-Петербург",
 }
 
-BASE = "https://market.yandex.ru"
+BASE = "https://www.ozon.ru"
 
 
 def region_cookies(geoid: str) -> list[dict[str, str]]:
     """Возвращает куки для выбора региона."""
     return [
         {
-            "name": "yandex_gid",
+            "name": "region",
             "value": geoid,
-            "domain": ".yandex.ru",
+            "domain": ".ozon.ru",
             "path": "/",
         }
     ]
@@ -29,8 +29,8 @@ def region_cookies(geoid: str) -> list[dict[str, str]]:
 def city_from_html(html: str) -> str | None:
     """Извлекает название города из HTML шапки сайта."""
     soup = BeautifulSoup(html, "html.parser")
-    el = soup.select_one("[data-autotest-id='region']") or soup.select_one(
-        "[data-zone-name='region']"
+    el = soup.select_one("[data-widget='headerLocation']") or soup.select_one(
+        "[data-widget='regionSelect']"
     )
     return el.get_text(strip=True) if el else None
 
@@ -43,52 +43,72 @@ def ensure_region(html: str, geoid: str) -> bool:
     city = city_from_html(html)
     return city == expected
 
-
 def _extract_price(text: str | None):
     if not text:
         return None
     digits = "".join(ch for ch in text if ch.isdigit())
     return int(digits) if digits else None
 
-def parse_listing(html: str, geoid: str | None = None) -> list[OfferRaw]:
-    """Парсит листинг Яндекс Маркета."""
+def parse_listing(html: str) -> list[OfferRaw]:
+    """Парсит листинг Ozon."""
     soup = BeautifulSoup(html, "html.parser")
     items: list[OfferRaw] = []
 
-    selectors = get_selectors("market").get("listing", {})
-    card_sel = selectors.get("card", {"css": "article[data-autotest-id='product-snippet']"})
-    link_sel = selectors.get("link", {"css": "a[href*='/product--']"})
-    title_sel = selectors.get("title", {"css": "[data-baobab-name='title']"})
-    price_sel = selectors.get("price", {"css": "[data-autotest-value]"})
+    selectors = get_selectors("ozon").get("listing", {})
+    container_sel = selectors.get("container", {"css": '[data-widget="searchResultsV2"]'})
+    card_sel = selectors.get("card", {"css": 'a[href*="/product/"]'})
+    price_sel = selectors.get("price")
     image_sel = selectors.get("image", {"css": "img"})
 
-    cards = select_all(soup, card_sel)
-    for card in cards:
-        link = select_one(card, link_sel)
-        if not link or not link.get("href"):
+    container = select_one(soup, container_sel) or soup
+    cards = select_all(container, card_sel)
+    seen = set()
+    for a in cards:
+        href = a.get("href")
+        if not href or "/product/" not in href:
             logger.warning("пропуск карточки: отсутствует ссылка")
             continue
-        href = link.get("href")
         url = urljoin(BASE, href)
+        if url in seen:
+            continue
+        seen.add(url)
 
-        title_el = select_one(card, title_sel) or link
-        title = title_el.get_text(" ", strip=True) if title_el and hasattr(title_el, "get_text") else "Товар Маркета"
+        title = a.get_text(" ", strip=True)
+        if not title:
+            # иногда заголовок рядом
+            title = (
+                (a.find_next("span") or {})
+                .get_text(strip=True)
+                if hasattr(a.find_next("span"), "get_text")
+                else ""
+            )
 
-        price_value = None
-        price_el = select_one(card, price_sel)
-        if price_el and hasattr(price_el, "get") and price_el.get("data-autotest-value"):
-            try:
-                price_value = int(price_el["data-autotest-value"])
-            except Exception:
-                pass
-        if price_value is None:
+        price_el = select_one(a, price_sel) if price_sel else None
+        price = None
+        if price_el is not None:
+            text = price_el.get_text() if hasattr(price_el, "get_text") else str(price_el)
+            price = _extract_price(text)
+        if price is None:
+            # fallback к поиску по тексту
+            price_el = a.find_next(
+                lambda tag: tag.name in ("span", "div")
+                and re.search(r"\d[\d\s]*₽", tag.get_text())
+            )
+            price = _extract_price(price_el.get_text() if price_el else "")
+        if price is None:
             logger.warning("пропуск карточки %s: отсутствует цена", url)
             continue
 
-        img_el = select_one(card, image_sel)
-        img = urljoin(BASE, img_el.get("src")) if img_el and img_el.get("src") else None
+        img = None
+        img_el = select_one(a, image_sel)
+        if img_el is not None:
+            if hasattr(img_el, "get") and img_el.get("src"):
+                img = urljoin(BASE, img_el.get("src"))
+            else:
+                img = urljoin(BASE, str(img_el))
 
-        text_block = card.get_text(" ", strip=True).lower()
+        # простые эвристики для купонов и доставки
+        text_block = a.get_text(" ", strip=True).lower()
 
         promo_flags: dict[str, int | bool] = {}
         m_coupon = re.search(r"купон.*?(\d+)", text_block)
@@ -110,24 +130,24 @@ def parse_listing(html: str, geoid: str | None = None) -> list[OfferRaw]:
         subscription = "подпис" in text_block
 
         items.append(OfferRaw(
-            source="market",
-            title=title[:200],
+            source="ozon",
+            title=title[:200] if title else "Товар Ozon",
             url=url,
             img=img,
-            price=price_value,
+            price=price,
             shipping_days=shipping_days,
             promo_flags=promo_flags,
             price_in_cart=price_in_cart,
             subscription=subscription,
-            geoid=geoid
+            geoid=None
         ))
     return items
 
 
-def parse_product(html: str, geoid: str | None = None) -> OfferRaw:
-    """Парсит страницу товара Маркета."""
+def parse_product(html: str) -> OfferRaw:
+    """Парсит страницу товара Ozon."""
     soup = BeautifulSoup(html, "html.parser")
-    selectors = get_selectors("market").get("product", {})
+    selectors = get_selectors("ozon").get("product", {})
 
     link = soup.find("link", rel="canonical")
     url = urljoin(BASE, link.get("href")) if link and link.get("href") else BASE
@@ -136,15 +156,21 @@ def parse_product(html: str, geoid: str | None = None) -> OfferRaw:
     title = (
         title_el.get_text(" ", strip=True)
         if title_el and hasattr(title_el, "get_text")
-        else "Товар Маркета"
+        else "Товар Ozon"
     )
 
-    price_el = select_one(soup, selectors.get("price", {"css": "[data-auto='mainPrice']"}))
+    price_el = select_one(soup, selectors.get("price", {"css": "[data-widget='webPrice']"}))
     price_text = price_el.get_text() if price_el and hasattr(price_el, "get_text") else str(price_el)
     price = _extract_price(price_text)
 
     img_el = select_one(soup, selectors.get("image", {"css": "img"}))
-    img = urljoin(BASE, img_el.get("src")) if img_el and img_el.get("src") else None
+    if img_el is not None:
+        if hasattr(img_el, "get") and img_el.get("src"):
+            img = urljoin(BASE, img_el.get("src"))
+        else:
+            img = urljoin(BASE, str(img_el))
+    else:
+        img = None
 
     text_block = soup.get_text(" ", strip=True).lower()
     promo_flags: dict[str, int | bool] = {}
@@ -167,7 +193,7 @@ def parse_product(html: str, geoid: str | None = None) -> OfferRaw:
     subscription = "подпис" in text_block
 
     offer = OfferRaw(
-        source="market",
+        source="ozon",
         title=title[:200],
         url=url,
         img=img,
@@ -176,7 +202,7 @@ def parse_product(html: str, geoid: str | None = None) -> OfferRaw:
         promo_flags=promo_flags,
         price_in_cart=price_in_cart,
         subscription=subscription,
-        geoid=geoid,
+        geoid=None,
     )
     return offer
 
@@ -192,7 +218,7 @@ def compute_final_price(offer: OfferRaw):
     )
 
 def external_id_from_url(url: str) -> str:
-    # market product URLs look like /product--slug/ID?...
+    # пример: https://www.ozon.ru/product/slug-123456789/ → берём последний числовой id
     path = urlparse(url).path
-    m = re.search(r'/product--[^/]+/(\d+)', path)
+    m = re.search(r'(\d+)(?:/|$)', path)
     return m.group(1) if m else path.strip("/")
